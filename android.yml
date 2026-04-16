@@ -1,0 +1,152 @@
+# GitHub Actions工作流配置文件，用于Android项目的CI/CD流程
+# 路径: .github/workflows/android.yml
+
+name: Android Build and Release # 工作流名称
+
+# 触发条件：当代码推送到main分支或创建pull request时触发构建
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    # 构建环境配置：使用Ubuntu最新版，配置Android SDK、JDK和Gradle
+    runs-on: ubuntu-latest
+
+    # 构建矩阵：支持不同CPU架构的构建（armeabi-v7a, arm64-v8a）
+    strategy:
+      matrix:
+        arch: [ armeabi-v7a, arm64-v8a ]
+
+    steps:
+      # 步骤1: 检出当前仓库代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 获取完整的提交历史，便于版本号递增等操作
+
+      # 步骤2: 设置Java环境（安装JDK 17）
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle # 启用Gradle依赖缓存
+
+      # 步骤3: 设置Android SDK（安装Android SDK 34并接受许可证）
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 34
+          target: default
+          architecture: ${{ matrix.arch }}
+          license-refs: android-sdk-license-5be876d5 # 自动接受SDK许可证
+
+      # 步骤4: 缓存Gradle依赖以加快后续构建速度
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # 步骤5: 缓存Android SDK组件
+      - name: Cache Android SDK components
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/sdk
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
+
+      # 步骤6: 配置构建超时时间（设置为20分钟）
+      timeout-minutes: 20
+
+      # 步骤7: 可选 - 配置模型文件下载（例如离线翻译模型）
+      # - name: Download offline models
+      #   run: |
+      #     mkdir -p app/src/main/assets/models
+      #     wget -O app/src/main/assets/models/japanese-tts.tflite https://example.com/models/japanese-tts.tflite
+      #     wget -O app/src/main/assets/models/ja-zh-translator.tflite https://example.com/models/ja-zh-translator.tflite
+
+      # 步骤8: 构建应用（运行./gradlew assembleRelease构建发布APK）
+      - name: Build with Gradle
+        run: ./gradlew assembleRelease --parallel --no-daemon # 并行构建，不使用守护进程以避免资源占用
+        env:
+          ANDROID_ARCH: ${{ matrix.arch }} # 传递架构参数给Gradle脚本
+
+      # 步骤9: 运行单元测试（执行./gradlew test）
+      - name: Run tests
+        run: ./gradlew test --continue # 即使部分测试失败也继续执行其他测试
+
+      # 步骤10: 执行代码检查（运行./gradlew lint进行代码质量检查）
+      - name: Run lint
+        run: ./gradlew lint
+        continue-on-error: true # Lint警告不应导致构建失败
+
+      # 步骤11: 可选 - 配置构建变体支持release和debug构建
+      # - name: Build debug variant
+      #   run: ./gradlew assembleDebug
+
+      # 步骤12: 可选 - 配置签名密钥（使用GitHub Secrets管理签名密钥）
+      # 使用sign-android-release-action插件安全地签署APK
+      - name: Sign APK
+        if: github.ref == 'refs/heads/main' # 仅在main分支上签名
+        uses: ilammy/msys2-actions@v0.10.0
+        with:
+          install: |
+            pacman -S --noconfirm mingw-w64-x86_64-openssl
+          shell: bash
+          command: |
+            echo "${{ secrets.SIGNING_KEY }}" | base64 -d > app/debug.keystore
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY_BASE64 }}
+
+      # 步骤13: 打包APK（将生成的APK文件重命名并打包）
+      - name: Package APK
+        run: |
+          mkdir -p release-apks
+          cp app/build/outputs/apk/release/app-release-unsigned.apk "release-apks/app-release-${{ matrix.arch }}.apk"
+          zip -j release-apks/apks.zip release-apks/*.apk
+
+      # 步骤14: 上传构建产物（将APK文件上传为GitHub Actions artifact）
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks-${{ matrix.arch }}
+          path: release-apks/*.apk
+          retention-days: 7 # 保留7天
+
+      # 步骤15: 可选 - 配置版本号自动递增（基于Git标签）
+      # - name: Auto-increment version code
+      #   id: version
+      #   run: |
+      #     git fetch --prune --tags
+      #     latest_tag=$(git describe --tags `git rev-list --tags --max-count=1`)
+      #     version_code=$(echo $latest_tag | cut -d'.' -f3)
+      #     new_version_code=$((version_code + 1))
+      #     echo "new_version_code=$new_version_code" >> $GITHUB_ENV
+      #     echo "::set-output name=new_version_code::$new_version_code"
+
+      # 步骤16: 错误处理和回退机制（捕获异常并输出诊断信息）
+      - name: Diagnostic on failure
+        if: failure()
+        run: |
+          echo "Build failed. Gathering diagnostics..."
+          ./gradlew --stacktrace --info assembleRelease || true
+          ls -la app/build/outputs/apk/release/
+          cat app/build/reports/lint-results.txt || true
+
+      # 步骤17: 工作流状态通知（可集成Slack、Email等）
+      # - name: Notify on Slack
+      #   if: always()
+      #   uses: rtCamp/action-slack-notify@v2
+      #   env:
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      #     SLACK_COLOR: ${{ job.status == 'success' && 'good' || 'danger' }}
+      #     SLACK_MESSAGE: "Workflow *${{ github.workflow }}* in *${{ github.repository }}* finished with status _${{ job.status }}_"

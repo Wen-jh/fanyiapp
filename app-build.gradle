@@ -1,0 +1,170 @@
+// app/build.gradle
+
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    // 编译所用的Android SDK版本
+    compileSdk 34
+
+    defaultConfig {
+        // 应用唯一标识
+        applicationId "com.example.realtimejapanesetranslator"
+        // 最小支持的Android API级别（7.0+）
+        minSdkVersion 24
+        // 目标SDK版本，与compileSdk保持一致
+        targetSdkVersion 34
+        // 应用版本号，用于应用市场更新判断
+        versionCode 1
+        // 用户可见的应用版本名称
+        versionName "1.0"
+
+        // 配置测试选项
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // 配置NDK，指定支持的CPU架构，优化APK体积
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
+
+        // 为原生代码构建工具CMake传递参数，用于集成Vosk等C++库
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    // 构建类型配置
+    buildTypes {
+        release {
+            // 启用R8代码压缩、混淆和优化，减小APK大小并保护代码
+            minifyEnabled true
+            // 指定混淆规则文件
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 定义编译时的构建常量
+            buildConfigField "boolean", "ENABLE_LOG", "false"
+        }
+        debug {
+            // 调试版本启用调试信息，禁用代码压缩以方便调试
+            minifyEnabled false
+            useProguard false
+            buildConfigField "boolean", "ENABLE_LOG", "true"
+        }
+    }
+
+    // 外部原生构建配置，使用CMake来编译依赖于NDK的C/C++代码
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    // 编译选项，配置Java源码兼容性
+    compileOptions {
+        // 源码和目标字节码都使用Java 11
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    // Kotlin编译选项
+    kotlinOptions {
+        // JVM目标版本与Java编译版本保持一致
+        jvmTarget = '11'
+    }
+
+    // 打包选项，控制APK中包含或排除的资源
+    packagingOptions {
+        // 排除重复的许可证文件，避免打包冲突
+        resources {
+            excludes += ['/META-INF/{AL2.0,LGPL2.1}']
+        }
+    }
+
+    // 构建特性配置
+    buildFeatures {
+        // 启用View Binding，提供更安全的视图访问方式
+        viewBinding true
+        // 禁用不使用的功能以加速构建
+        compose false
+    }
+
+    // 产品风味（可选扩展），可根据不同场景构建不同版本
+    flavorDimensions "version"
+    productFlavors {
+        full {
+            dimension "version"
+            // 完整版包含所有模型
+            resValue "string", "app_name", "实时日语翻译"
+        }
+        lite {
+            dimension "version"
+            // 精简版可能使用更小的模型
+            resValue "string", "app_name", "实时翻译(精简版)"
+        }
+    }
+}
+
+// 依赖项配置
+dependencies {
+
+    // ==================== 核心UI组件 ====================
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // ==================== 架构组件 ====================
+    // ViewModel and LiveData for UI state management
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+
+    // Kotlin Coroutines for asynchronous operations
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // ==================== 音频与媒体处理 ====================
+    // MediaProjection API for capturing system audio (requires user permission)
+    implementation 'androidx.media:media:1.6.0'
+
+    // ==================== 语音识别 - Vosk离线引擎 ====================
+    // Vosk Android SDK for offline Japanese speech recognition
+    // 包含基于Kaldi的轻量级离线ASR模型
+    implementation 'com.github.alphacep:vosk-android:0.3.42'
+
+    // ==================== 机器翻译 - TensorFlow Lite ====================
+    // TensorFlow Lite runtime for on-device inference
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    // GPU委托以加速推理（如果设备支持）
+    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
+    // NNAPI委托，利用设备专用NPU进行加速
+    implementation 'org.tensorflow:tensorflow-lite-delegates:2.14.0'
+    // 用于加载和处理TFLite模型的辅助库
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+
+    // ==================== 权限管理 ====================
+    // 简化运行时权限请求，包括特殊权限引导
+    implementation 'com.github.hotchemi:permissionsdispatcher:4.8.0'
+    kapt 'com.github.hotchemi:permissionsdispatcher-processor:4.8.0'
+
+    // ==================== 其他实用库 ====================
+    // Gson for JSON parsing (e.g., model config)
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // Testing dependencies
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+}
+
+// 配置ProGuard/R8混淆规则，保护敏感逻辑和模型文件
+// 位于app/proguard-rules.pro文件中
+//
+// 示例规则：
+// -keep class com.example.translator.model.** { *; } // 保护模型相关类
+// -keep class org.vosk.** { *; } // 保留Vosk库不被混淆
+// -keep class org.tensorflow.lite.** { *; } // 保留TensorFlow Lite核心
+// -assumenosideeffects class android.util.Log { *; } // 移除发布版中的日志调用

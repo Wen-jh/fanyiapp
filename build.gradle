@@ -1,0 +1,170 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+buildscript {
+    // 定义项目级依赖的仓库和版本配置
+    repositories {
+        google()  // Google's Maven repository for Android plugins and libraries
+        mavenCentral()  // Central repository for open-source Java/Kotlin libraries
+        gradlePluginPortal() // For community Gradle plugins (e.g., Kotlin, KSP)
+    }
+
+    // 定义构建脚本自身所需的依赖项（即插件类路径）
+    dependencies {
+        // Android Gradle Plugin (AGP) - 核心构建工具，支持最新Android功能
+        // 版本8.0+ 支持最新的Build Tooling、R8优化、APK编译等特性
+        classpath 'com.android.tools.build:gradle:8.1.0'
+
+        // Kotlin Gradle Plugin - 提供Kotlin语言支持
+        // 版本1.9+ 兼容协程、DSL、Compose等现代Android开发需求
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20'
+
+        // 可选：Navigation Safe Args 插件（如果使用Navigation组件）
+        // classpath "androidx.navigation:navigation-safe-args-gradle-plugin:2.7.6"
+    }
+}
+
+// 配置所有子项目通用的仓库和依赖解析策略
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        // 可选：添加私有或第三方库仓库
+        // maven { url 'https://jitpack.io' }
+    }
+
+    // 可选：统一依赖版本管理（可在子模块中覆盖）
+    configurations.all {
+        // 启用缓存以提高构建性能
+        resolutionStrategy.cacheChangingModulesFor(0, 'seconds') // 实验性模块不缓存
+        resolutionStrategy.cacheDynamicVersionsFor(10, 'minutes') // 动态版本缓存时间
+    }
+}
+
+// 使用plugins DSL方式声明顶层插件（推荐方式）
+plugins {
+    // 应用Android项目插件（必须在settings.gradle中启用includeBuild）
+    // id 'com.android.application' 应在app模块中应用
+
+    // 启用Kotlin多平台支持（适用于跨平台逻辑复用）
+    id 'org.jetbrains.kotlin.multiplatform' version '1.9.20' apply false
+
+    // 启用Kotlin Android插件（用于Android模块）
+    id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
+
+    // 可选：Kotlin Serialization插件（用于JSON序列化）
+    // id 'org.jetbrains.kotlin.plugin.serialization' version '1.9.20' apply false
+
+    // 可选：Google Services插件（如需集成Firebase）
+    // id 'com.google.gms.google-services' version '4.4.2' apply false
+
+    // 可选：Detekt静态代码分析插件
+    // id 'io.gitlab.arturbosch.detekt' version '1.23.3' apply false
+}
+
+// 定义全局扩展属性块，用于统一管理版本号和配置
+ext {
+    // Android SDK 版本配置
+    compileSdkVersion = 34
+    targetSdkVersion = 34
+    minSdkVersion = 24  // API 24: 支持Android 7.0及以上，满足离线模型与NDK运行要求
+
+    // 构建工具版本
+    buildToolsVersion = "34.0.0"
+
+    // JVM 和 Java 版本兼容性设置
+    jvmTargetVersion = "17"  // Kotlin和Android推荐使用Java 17
+
+    // 库版本常量定义（便于集中升级）
+    versions = [
+            // 基础架构组件
+            appcompat           : '1.6.1',
+            coreKtx             : '1.12.0',
+            material            : '1.11.0',
+            constraintlayout    : '2.1.4',
+
+            // ViewModel & LiveData
+            lifecycle           : '2.7.0',
+            viewModelKtx        : '2.7.0',
+            liveDataKtx         : '2.7.0',
+
+            // 协程支持
+            kotlinCoroutines    : '1.7.3',
+
+            // 网络与数据处理（备用在线翻译通道）
+            retrofit            : '2.11.0',
+            okhttpLogging       : '4.12.0',
+
+            // 音频处理与播放
+            media               : '1.6.0',
+            exoplayer           : '2.18.7',
+
+            // 机器学习与模型推理
+            tensorflowLite      : '2.13.0',
+            onnxRuntime         : '1.15.1',
+
+            // NDK 相关原生库支持
+            ndkBindings         : '2.0.0',
+
+            // 浮窗与UI增强
+            windowManager       : '0.1.0', // 自定义浮窗管理库占位符
+    ]
+
+    // 依赖库坐标映射（避免重复字符串）
+    libs = [
+            // AndroidX
+            appcompat          : "androidx.appcompat:appcompat:$versions.appcompat",
+            coreKtx            : "androidx.core:core-ktx:$versions.coreKtx",
+            material           : "com.google.android.material:material:$versions.material",
+            constraintlayout   : "androidx.constraintlayout:constraintlayout:$versions.constraintlayout",
+
+            // Lifecycle
+            lifecycleRuntimeKtx: "androidx.lifecycle:lifecycle-runtime-ktx:$versions.lifecycle",
+            viewModelKtx       : "androidx.lifecycle:lifecycle-viewmodel-ktx:$versions.viewModelKtx",
+            liveDataKtx        : "androidx.lifecycle:lifecycle-livedata-ktx:$versions.liveDataKtx",
+
+            // Kotlin Coroutines
+            coroutinesCore     : "org.jetbrains.kotlinx:kotlinx-coroutines-core:$versions.kotlinCoroutines",
+            coroutinesAndroid  : "org.jetbrains.kotlinx:kotlinx-coroutines-android:$versions.kotlinCoroutines",
+
+            // Media Projection & Audio Capture (API-level controlled)
+            media              : "androidx.media:media:$versions.media",
+            exoplayerCore      : "com.google.android.exoplayer:exoplayer-core:$versions.exoplayer",
+
+            // Machine Learning Inference Engines
+            tensorflowLite     : "org.tensorflow:tensorflow-lite:$versions.tensorflowLite",
+            tensorflowLiteGPU  : "org.tensorflow:tensorflow-lite-gpu-delegate:$versions.tensorflowLite",
+            tensorflowLiteNNAPI: "org.tensorflow:tensorflow-lite-support:$versions.tensorflowLite",
+            onnxRuntime        : "com.microsoft.onnxruntime:onnxruntime-android:$versions.onnxRuntime",
+
+            // NDK Interop Support
+            ndkAnnotations     : "androidx.annotation:annotation-experimental:$versions.ndkBindings",
+    ]
+}
+
+// 全局构建选项配置
+gradle.projectsLoaded {
+    rootProject.tasks.withType(JavaCompile) {
+        // 设置Java编译兼容性
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+// 启用并配置Gradle构建缓存（提升增量构建速度）
+buildCache {
+    local {
+        enabled = true
+        directory = new File(rootDir, 'build-cache')
+        removeUnusedEntriesAfterDays = 30
+    }
+}
+
+// 配置Gradle守护进程与构建环境（建议在gradle.properties中设置，此处为说明）
+// 可通过gradle.properties控制：
+// org.gradle.jvmargs=-Xmx4g -XX:+HeapDumpOnOutOfMemoryError
+// org.gradle.parallel=true
+// org.gradle.caching=true
+
+// 错误处理与日志提示
+if (!JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
+    throw new GradleException("This project requires Java 17 or higher to build.")
+}

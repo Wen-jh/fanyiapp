@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.realtimetranslator"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <!-- 权限声明 -->
+    <!-- 音频录制权限：用于捕获设备麦克风输入或通过MediaProjection捕获的音频流 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    
+    <!-- 悬浮窗口权限：特殊权限，允许应用在其他应用上层显示悬浮字幕窗口 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    
+    <!-- 前台服务权限：确保翻译服务在后台持续运行，避免被系统杀死 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    
+    <!-- 网络权限（可选）：用于在线模型更新、远程API调用等扩展功能 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    
+    <!-- 外部存储写入权限（可选）：用于保存离线模型文件、日志或用户配置 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- 硬件特性声明 -->
+    <!-- 应用需要麦克风硬件支持语音输入 -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="true" />
+    
+    <!-- 可选音频专业处理支持，提升高保真音频处理能力 -->
+    <uses-feature
+        android:name="android.hardware.audio.pro"
+        android:required="false" />
+
+    <!-- 应用组件声明 -->
+    <application
+        android:name=".RealTimeTranslatorApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme"
+        android:supportsRtl="true"
+        android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
+        android:appCategory="productivity">
+
+        <!-- 主Activity：应用启动入口 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:screenOrientation="fullUser"
+            android:windowSoftInputMode="adjustResize">
+            
+            <!-- 启动器Intent过滤器 -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 悬浮字幕窗口服务：管理悬浮窗的创建、更新和销毁 -->
+        <service
+            android:name=".service.FloatingSubtitleService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="floating_subtitle" />
+        </service>
+
+        <!-- 广播接收器：监听系统事件（如屏幕开关、电量变化）以优化资源使用 -->
+        <receiver
+            android:name=".receiver.SystemEventReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.SCREEN_OFF" />
+                <action android:name="android.intent.action.SCREEN_ON" />
+                <action android:name="android.intent.action.BATTERY_LOW" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 无障碍服务（备用方案）：用于监听系统音频输出（需用户手动开启） -->
+        <service
+            android:name=".service.AudioAccessibilityService"
+            android:enabled="false"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- 提供媒体投影功能的Activity（隐藏） -->
+        <activity
+            android:name=".ui.MediaProjectionActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:finishOnTaskLaunch="true" />
+
+    </application>
+
+    <!-- 兼容性与安全配置 -->
+    <!-- 目标API级别兼容设置 -->
+    <uses-sdk
+        android:minSdkVersion="24"
+        android:targetSdkVersion="34" />
+
+    <!-- 屏幕方向支持：适配所有方向 -->
+    <supports-screens
+        android:smallScreens="true"
+        android:normalScreens="true"
+        android:largeScreens="true"
+        android:xlargeScreens="true"
+        android:anyDensity="true" />
+
+    <!-- 安全传输配置 -->
+    <application>
+        <activity
+            android:name=".ui.SecureDisplayActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:directBootAware="false">
+            <meta-data
+                android:name="android.security.net.config"
+                android:resource="@xml/network_security_config" />
+        </activity>
+    </application>
+
+    <!-- 数据加密支持声明 -->
+    <application>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+    <!-- 性能优化相关配置 -->
+    <!-- 多进程支持（可选）：将模型推理放入独立进程 -->
+    <service
+        android:name=".service.InferenceService"
+        android:process=":inference"
+        android:exported="false" />
+
+    <!-- 配置低内存设备行为 -->
+    <application>
+        <activity
+            android:name=".ui.LowMemoryOptimizationActivity"
+            android:exported="false"
+            android:hardwareAccelerated="false" />
+    </application>
+
+</manifest>

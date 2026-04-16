@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/floating_window_layout"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="16dp"
+    android:background="#80000000"
+    android:elevation="8dp">
+
+    <!-- 拖动区域，支持整个布局拖拽 -->
+    <View
+        android:id="@+id/drag_area"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="false" />
+
+    <!-- 显示实时翻译结果的TextView -->
+    <TextView
+        android:id="@+id/tv_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="52dp"
+        android:layout_marginHorizontal="12dp"
+        android:gravity="center"
+        android:lineSpacingExtra="4sp"
+        android:maxLines="3"
+        android:paddingVertical="16dp"
+        android:shadowColor="#000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="2"
+        android:text=""
+        android:textColor="#FFFFFF"
+        android:textSize="18sp" />
+
+    <!-- 关闭按钮 -->
+    <ImageButton
+        android:id="@+id/btn_close"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/ic_round_close_24"
+        android:contentDescription="关闭悬浮窗"
+        android:tint="#FFFFFF" />
+
+    <!-- 设置按钮（可选） -->
+    <ImageButton
+        android:id="@+id/btn_settings"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="52dp"
+        android:background="@drawable/ic_round_settings_24"
+        android:contentDescription="设置"
+        android:tint="#FFFFFF" />
+
+</FrameLayout>
