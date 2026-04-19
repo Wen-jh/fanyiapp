@@ -10,6 +10,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -17,6 +20,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
 import android.speech.RecognitionListener
+import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.view.Gravity
@@ -42,6 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 class SubtitleOverlayService : Service() {
     companion object {
@@ -62,6 +67,7 @@ class SubtitleOverlayService : Service() {
     private var speechRecognizer: SpeechRecognizer? = null
     private var translator: Translator? = null
     private var recognitionRestartJob: Job? = null
+    private var levelMonitorJob: Job? = null
     private var inputMode: InputMode = InputMode.UNDECIDED
     private var lastRms: Float = 0f
     private var lastOriginalText: String = ""
@@ -169,12 +175,21 @@ class SubtitleOverlayService : Service() {
             return
         }
 
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            recognitionState = "系统 SpeechRecognizer 不可用"
+        val recognitionSupport = inspectRecognitionSupport()
+        if (!recognitionSupport.available) {
+            recognitionState = recognitionSupport.message
+            captureState = "已切换为麦克风电平诊断模式"
+            translationState = if (translationState.contains("正在准备") || translationState.contains("就绪")) {
+                translationState
+            } else {
+                "等待识别服务恢复后才能产生日语文本"
+            }
+            startFallbackLevelMonitoring()
             renderPipeline()
             return
         }
 
+        stopFallbackLevelMonitoring()
         speechRecognizer?.destroy()
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
             setRecognitionListener(object : RecognitionListener {
@@ -250,6 +265,37 @@ class SubtitleOverlayService : Service() {
         recognitionState = "识别器已初始化"
     }
 
+    private fun inspectRecognitionSupport(): RecognitionSupport {
+        if (SpeechRecognizer.isRecognitionAvailable(this)) {
+            return RecognitionSupport(true, "SpeechRecognizer 可用")
+        }
+
+        val serviceIntent = Intent(RecognitionService.SERVICE_INTERFACE)
+        val serviceFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong())
+        } else {
+            null
+        }
+        val services = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.queryIntentServices(serviceIntent, serviceFlags!!)
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentServices(serviceIntent, PackageManager.MATCH_ALL)
+        }
+
+        val speechActivity = packageManager.resolveActivity(
+            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH),
+            PackageManager.MATCH_DEFAULT_ONLY
+        )
+
+        val message = when {
+            services.isEmpty() && speechActivity == null -> "系统 SpeechRecognizer 不可用：设备未安装语音识别服务（请安装/启用 Google 语音输入或系统语音服务）"
+            services.isEmpty() -> "系统 SpeechRecognizer 不可用：语音识别 Activity 存在，但后台识别服务缺失"
+            else -> "系统 SpeechRecognizer 不可用：检测到服务组件，但当前系统未开放给应用"
+        }
+        return RecognitionSupport(false, message)
+    }
+
     private fun maybeStartRecognition() {
         if (inputMode == InputMode.UNAVAILABLE) {
             captureState = "无法开始，设备探测失败"
@@ -281,6 +327,94 @@ class SubtitleOverlayService : Service() {
             recognitionState = "启动识别失败：${error.message ?: error.javaClass.simpleName}"
             renderPipeline()
         }
+    }
+
+    private fun startFallbackLevelMonitoring() {
+        if (levelMonitorJob?.isActive == true) return
+        levelMonitorJob = serviceScope.launch(Dispatchers.IO) {
+            val minBuffer = AudioRecord.getMinBufferSize(
+                16000,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+            if (minBuffer <= 0) {
+                withContext(Dispatchers.Main) {
+                    captureState = "麦克风电平诊断不可用"
+                    renderPipeline(levelOverride = "音量: 未知")
+                }
+                return@launch
+            }
+
+            val record = try {
+                AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    16000,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    minBuffer.coerceAtLeast(16000)
+                )
+            } catch (_: Throwable) {
+                null
+            }
+
+            if (record == null || record.state != AudioRecord.STATE_INITIALIZED) {
+                record?.release()
+                withContext(Dispatchers.Main) {
+                    captureState = "麦克风电平诊断初始化失败"
+                    renderPipeline(levelOverride = "音量: 未知")
+                }
+                return@launch
+            }
+
+            val samples = ShortArray(2048)
+            try {
+                record.startRecording()
+                while (isActive) {
+                    val read = record.read(samples, 0, samples.size)
+                    if (read > 0) {
+                        val level = normalizePcmLevel(samples, read)
+                        withContext(Dispatchers.Main) {
+                            lastRms = ((level / 100f) * 12f) - 2f
+                            captureState = if (level > 6) "已检测到麦克风音频（诊断模式）" else "等待麦克风音频（诊断模式）"
+                            renderPipeline(levelOverride = "音量: ${level.toInt()}%")
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            captureState = "等待麦克风音频（诊断模式）"
+                            renderPipeline(levelOverride = "音量: 0%")
+                        }
+                        delay(120)
+                    }
+                }
+            } catch (_: Throwable) {
+                withContext(Dispatchers.Main) {
+                    captureState = "麦克风电平诊断中断"
+                    renderPipeline(levelOverride = "音量: 未知")
+                }
+            } finally {
+                try {
+                    record.stop()
+                } catch (_: Throwable) {
+                }
+                record.release()
+            }
+        }
+    }
+
+    private fun stopFallbackLevelMonitoring() {
+        levelMonitorJob?.cancel()
+        levelMonitorJob = null
+    }
+
+    private fun normalizePcmLevel(buffer: ShortArray, read: Int): Float {
+        if (read <= 0) return 0f
+        var sum = 0.0
+        for (i in 0 until read) {
+            val sample = buffer[i].toDouble()
+            sum += sample * sample
+        }
+        val rms = sqrt(sum / read)
+        return ((rms / 2000.0) * 100.0).coerceIn(0.0, 100.0).toFloat()
     }
 
     private fun scheduleRecognitionRestart() {
@@ -458,6 +592,7 @@ class SubtitleOverlayService : Service() {
 
     override fun onDestroy() {
         recognitionRestartJob?.cancel()
+        stopFallbackLevelMonitoring()
         speechRecognizer?.destroy()
         speechRecognizer = null
         translator?.close()
@@ -481,3 +616,8 @@ private enum class InputMode(val label: String) {
     MICROPHONE("麦克风识别"),
     UNAVAILABLE("不可用")
 }
+
+private data class RecognitionSupport(
+    val available: Boolean,
+    val message: String
+)

@@ -75,7 +75,7 @@ class MainActivity : AppCompatActivity() {
             showStatus("服务已停止")
         }
 
-        showStatus("准备就绪：先授权悬浮窗，再点击开始。悬浮窗将显示采集/识别/翻译全过程。")
+        showStatus("准备就绪：先授权悬浮窗，再点击开始。若设备缺少系统语音识别服务，悬浮窗会自动切到麦克风电平诊断模式，并明确提示需要安装/启用语音服务。")
     }
 
     private fun ensurePermissionsAndStart() {

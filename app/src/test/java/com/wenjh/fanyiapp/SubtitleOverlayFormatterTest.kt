@@ -1,6 +1,7 @@
 package com.wenjh.fanyiapp
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SubtitleOverlayFormatterTest {
@@ -114,5 +115,22 @@ class SubtitleOverlayFormatterTest {
             "模式：播放捕获模式\n采集：等待音频输入\n识别：未开始\n翻译：未开始\n音量: 未知\n日语：（未识别到日语）\n中文：（暂无翻译结果）",
             result
         )
+    }
+
+    @Test
+    fun composePipeline_surfacesDetailedSpeechRecognizerUnavailableMessage() {
+        val result = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = "播放捕获+麦克风识别",
+            captureState = "已切换为麦克风电平诊断模式",
+            recognitionState = "系统 SpeechRecognizer 不可用：设备未安装语音识别服务（请安装/启用 Google 语音输入或系统语音服务）",
+            translationState = "等待识别服务恢复后才能产生日语文本",
+            original = "",
+            translated = "",
+            levelHint = "音量: 42%"
+        )
+
+        assertTrue(result.contains("已切换为麦克风电平诊断模式"))
+        assertTrue(result.contains("请安装/启用 Google 语音输入或系统语音服务"))
+        assertTrue(result.contains("音量: 42%"))
     }
 }
