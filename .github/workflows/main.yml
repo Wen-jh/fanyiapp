@@ -1,43 +1,50 @@
-name: Android Build & Release
+name: Android Debug APK
 
-# 触发条件：
-# 1. 推送到 main 分支
-# 2. 手动点击按钮触发 (workflow_dispatch)
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-debug:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-    # 步骤 1: 检出代码
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # 步骤 2: 设置 JDK 环境 (根据你的项目配置，通常是 17 或 21)
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
-    # 步骤 3: 赋予 Gradle 执行权限
-    - name: Grant Execute Permission for gradlew
-      run: chmod +x gradlew
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-    # 步骤 4: 构建 Debug 版本 APK
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      - name: Accept licenses and install SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-    # 步骤 5: 上传 APK 产物
-    # 这样你可以在 Actions 页面直接下载编译好的 APK
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug.apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Install Gradle 8.7
+        run: |
+          curl -L https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/gradle-8.7-bin.zip
+          unzip -q /tmp/gradle-8.7-bin.zip -d /tmp
+          echo "/tmp/gradle-8.7/bin" >> $GITHUB_PATH
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.7
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fanyiapp-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
