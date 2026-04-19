@@ -96,10 +96,21 @@ class SubtitleOverlayService : Service() {
     private suspend fun bootstrapPipeline() {
         determineInputMode()
         renderPipeline()
-        prepareTranslator()
-        prepareSpeechRecognizer()
-        renderPipeline()
-        maybeStartRecognition()
+
+        val availability = if (inputMode == InputMode.UNAVAILABLE) {
+            InputAvailability.UNAVAILABLE
+        } else {
+            InputAvailability.AVAILABLE
+        }
+
+        SubtitlePipelineBootstrapPlanner.planFor(availability).forEach { step ->
+            when (step) {
+                BootstrapStep.PREPARE_RECOGNIZER -> prepareSpeechRecognizer()
+                BootstrapStep.START_RECOGNITION -> maybeStartRecognition()
+                BootstrapStep.PREPARE_TRANSLATOR -> serviceScope.launch { prepareTranslator() }
+            }
+            renderPipeline()
+        }
     }
 
     private fun determineInputMode() {
@@ -123,7 +134,7 @@ class SubtitleOverlayService : Service() {
     }
 
     private suspend fun prepareTranslator() {
-        translationState = "正在准备日语→中文翻译模型"
+        translationState = "正在准备日语→中文翻译模型（后台）"
         renderPipeline()
 
         val options = TranslatorOptions.Builder()
@@ -283,7 +294,7 @@ class SubtitleOverlayService : Service() {
     private fun translateRecognizedText(text: String) {
         val currentTranslator = translator
         if (!isTranslatorReady || currentTranslator == null) {
-            translationState = "翻译器未就绪，保留原文"
+            translationState = "翻译器未就绪，先显示原文"
             lastTranslatedText = ""
             renderPipeline()
             scheduleRecognitionRestart()

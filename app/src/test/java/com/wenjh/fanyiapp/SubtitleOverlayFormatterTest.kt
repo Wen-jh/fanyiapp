@@ -63,6 +63,42 @@ class SubtitleOverlayFormatterTest {
     }
 
     @Test
+    fun composePipeline_showsPreparingHintWhenTranslatorStillLoading() {
+        val result = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = "播放捕获模式",
+            captureState = "等待音频输入",
+            recognitionState = "已就绪，等待日语语音",
+            translationState = "正在准备日语→中文翻译模型（后台）",
+            original = "",
+            translated = "",
+            levelHint = ""
+        )
+
+        assertEquals(
+            "模式：播放捕获模式\n采集：等待音频输入\n识别：已就绪，等待日语语音\n翻译：正在准备日语→中文翻译模型（后台）\n音量: 未知\n日语：（未识别到日语）\n中文：（翻译模型准备中）",
+            result
+        )
+    }
+
+    @Test
+    fun composePipeline_showsRawTextHintWhenTranslatorNotReady() {
+        val result = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = "播放捕获模式",
+            captureState = "已接收到音频",
+            recognitionState = "已识别到日语文本",
+            translationState = "翻译器未就绪，先显示原文",
+            original = "テストです",
+            translated = "",
+            levelHint = "音量: 11%"
+        )
+
+        assertEquals(
+            "模式：播放捕获模式\n采集：已接收到音频\n识别：已识别到日语文本\n翻译：翻译器未就绪，先显示原文\n音量: 11%\n日语：テストです\n中文：（翻译尚未就绪，当前先显示原文）",
+            result
+        )
+    }
+
+    @Test
     fun composePipeline_usesFallbacksWhenDataMissing() {
         val result = SubtitleOverlayFormatter.composePipeline(
             modeLabel = "播放捕获模式",

@@ -35,7 +35,13 @@ object SubtitleOverlayFormatter {
         levelHint: String
     ): String {
         val safeOriginal = original.ifBlank { "（未识别到日语）" }
-        val safeTranslated = translated.ifBlank { "（暂无翻译结果）" }
+        val safeTranslated = translated.ifBlank {
+            when {
+                translationState.contains("先显示原文") -> "（翻译尚未就绪，当前先显示原文）"
+                translationState.contains("正在准备") -> "（翻译模型准备中）"
+                else -> "（暂无翻译结果）"
+            }
+        }
         val safeLevelHint = levelHint.ifBlank { "音量: 未知" }
         return listOf(
             "模式：$modeLabel",
