@@ -35,7 +35,7 @@ class MainActivity : AppCompatActivity() {
         if (granted) {
             requestProjection()
         } else {
-            showStatus("未授予录音权限")
+            showStatus("未授予录音权限，无法启动识别链路")
         }
     }
 
@@ -47,7 +47,8 @@ class MainActivity : AppCompatActivity() {
             projectionDataIntent = result.data
             startSubtitleService()
         } else {
-            showStatus("未授予屏幕捕获权限")
+            showStatus("未授予投屏/播放捕获权限，仍可只用麦克风识别")
+            startSubtitleService()
         }
     }
 
@@ -74,7 +75,7 @@ class MainActivity : AppCompatActivity() {
             showStatus("服务已停止")
         }
 
-        showStatus("准备就绪：先授权悬浮窗，再点击开始")
+        showStatus("准备就绪：先授权悬浮窗，再点击开始。悬浮窗将显示采集/识别/翻译全过程。")
     }
 
     private fun ensurePermissionsAndStart() {
@@ -107,20 +108,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startSubtitleService() {
-        val resultCode = projectionResultCode
-        val data = projectionDataIntent
-        if (resultCode == null || data == null) {
-            showStatus("屏幕捕获授权无效")
-            return
-        }
-
         val serviceIntent = Intent(this, SubtitleOverlayService::class.java).apply {
             action = SubtitleOverlayService.ACTION_START
-            putExtra(SubtitleOverlayService.EXTRA_RESULT_CODE, resultCode)
-            putExtra(SubtitleOverlayService.EXTRA_DATA_INTENT, data)
+            projectionResultCode?.let { putExtra(SubtitleOverlayService.EXTRA_RESULT_CODE, it) }
+            projectionDataIntent?.let { putExtra(SubtitleOverlayService.EXTRA_DATA_INTENT, it) }
         }
         ContextCompat.startForegroundService(this, serviceIntent)
-        showStatus("服务启动中…")
+        showStatus("服务启动中：悬浮窗将展示是否收到音频、识别中、翻译中等过程状态")
     }
 
     private fun showStatus(message: String) {
