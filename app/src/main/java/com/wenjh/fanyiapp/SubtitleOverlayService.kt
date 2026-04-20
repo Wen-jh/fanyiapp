@@ -23,7 +23,6 @@ import android.view.WindowManager
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
@@ -224,23 +223,15 @@ class SubtitleOverlayService : Service() {
         }
 
         try {
-            startDownloadStatusTicker("等待 Wi‑Fi")
-            translator?.downloadModelIfNeeded(DownloadConditions.Builder().requireWifi().build())?.await()
+            startDownloadStatusTicker("已允许移动网络")
+            translator?.downloadModelIfNeeded()?.await()
             stopDownloadStatusTicker()
             isTranslatorReady = true
-            translationState = "翻译模型就绪"
-        } catch (_: Throwable) {
-            try {
-                startDownloadStatusTicker("已允许移动网络")
-                translator?.downloadModelIfNeeded()?.await()
-                stopDownloadStatusTicker()
-                isTranslatorReady = true
-                translationState = "翻译模型就绪（已允许移动网络下载）"
-            } catch (error: Throwable) {
-                stopDownloadStatusTicker()
-                isTranslatorReady = false
-                translationState = "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
-            }
+            translationState = "翻译模型就绪（允许流量下载）"
+        } catch (error: Throwable) {
+            stopDownloadStatusTicker()
+            isTranslatorReady = false
+            translationState = "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
         }
 
         if (isTranslatorReady) {
