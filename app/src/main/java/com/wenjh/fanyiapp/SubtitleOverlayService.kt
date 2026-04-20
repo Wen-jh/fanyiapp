@@ -64,6 +64,7 @@ class SubtitleOverlayService : Service() {
     private var voskRecognizer: VoskStreamingRecognizer? = null
     private var debugDumpWriter: AudioDebugDumpWriter? = null
     private val translationSegmenter = TranslationSegmenter()
+    private val pendingTranslationCoordinator = PendingTranslationCoordinator()
 
     private var inputModeLabel: String = "检测中"
     private var playbackCaptureInitiallyAvailable: Boolean = false
@@ -186,6 +187,7 @@ class SubtitleOverlayService : Service() {
     }
 
     private suspend fun prepareTranslator() {
+        isTranslatorReady = false
         translationState = "正在准备日语→中文翻译模型（后台）"
         renderPipeline()
 
@@ -194,6 +196,7 @@ class SubtitleOverlayService : Service() {
             .setTargetLanguage(TranslateLanguage.CHINESE)
             .build()
 
+        translatorJob?.cancel()
         translator?.close()
         translator = com.google.mlkit.nl.translate.Translation.getClient(options)
 
@@ -209,6 +212,13 @@ class SubtitleOverlayService : Service() {
             } catch (error: Throwable) {
                 isTranslatorReady = false
                 translationState = "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
+            }
+        }
+
+        if (isTranslatorReady) {
+            pendingTranslationCoordinator.consumeReady()?.let { pending ->
+                translateRecognizedText(pending.text, pending.provisional)
+                return
             }
         }
         renderPipeline()
@@ -333,8 +343,14 @@ class SubtitleOverlayService : Service() {
     }
 
     private fun translateRecognizedText(text: String, provisional: Boolean) {
+        val normalizedText = text.trim()
+        if (normalizedText.isBlank()) {
+            return
+        }
+
         val currentTranslator = translator
         if (!isTranslatorReady || currentTranslator == null) {
+            pendingTranslationCoordinator.rememberPending(normalizedText, provisional)
             translationState = "翻译器未就绪，先显示原文"
             lastTranslatedText = ""
             renderPipeline()
@@ -346,7 +362,7 @@ class SubtitleOverlayService : Service() {
             translationState = if (provisional) "正在低延迟翻译（预测）" else "正在翻译"
             renderPipeline()
             try {
-                val translated = withContext(Dispatchers.IO) { currentTranslator.translate(text).await().trim() }
+                val translated = withContext(Dispatchers.IO) { currentTranslator.translate(normalizedText).await().trim() }
                 if (translated.isNotBlank()) {
                     lastTranslatedText = translated
                     translationState = if (provisional) "低延迟翻译已更新" else "翻译完成"
