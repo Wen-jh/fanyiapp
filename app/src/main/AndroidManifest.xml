@@ -16,6 +16,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Fanyiapp">
 
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="translate" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

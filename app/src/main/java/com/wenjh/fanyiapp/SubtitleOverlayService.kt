@@ -33,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -59,6 +60,7 @@ class SubtitleOverlayService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var translator: Translator? = null
     private var translatorJob: Job? = null
+    private var translatorDownloadStatusJob: Job? = null
     private var audioLoopJob: Job? = null
     private var audioSource: PlaybackCaptureAudioSource? = null
     private var voskRecognizer: VoskStreamingRecognizer? = null
@@ -188,6 +190,7 @@ class SubtitleOverlayService : Service() {
 
     private suspend fun prepareTranslator() {
         isTranslatorReady = false
+        translatorDownloadStatusJob?.cancel()
         translationState = "正在准备日语→中文翻译模型（后台）"
         renderPipeline()
 
@@ -200,16 +203,41 @@ class SubtitleOverlayService : Service() {
         translator?.close()
         translator = com.google.mlkit.nl.translate.Translation.getClient(options)
 
+        val startedAt = SystemClock.elapsedRealtime()
+        fun buildDownloadState(extra: String): String {
+            val elapsedSeconds = ((SystemClock.elapsedRealtime() - startedAt) / 1000L).coerceAtLeast(0L)
+            return "下载中（已耗时 ${elapsedSeconds}s，$extra；进度：ML Kit 未提供百分比）"
+        }
+        fun startDownloadStatusTicker(extra: String) {
+            translatorDownloadStatusJob?.cancel()
+            translatorDownloadStatusJob = serviceScope.launch {
+                while (isActive && !isTranslatorReady) {
+                    translationState = buildDownloadState(extra)
+                    renderPipeline()
+                    delay(1000)
+                }
+            }
+        }
+        fun stopDownloadStatusTicker() {
+            translatorDownloadStatusJob?.cancel()
+            translatorDownloadStatusJob = null
+        }
+
         try {
+            startDownloadStatusTicker("等待 Wi‑Fi")
             translator?.downloadModelIfNeeded(DownloadConditions.Builder().requireWifi().build())?.await()
+            stopDownloadStatusTicker()
             isTranslatorReady = true
             translationState = "翻译模型就绪"
         } catch (_: Throwable) {
             try {
+                startDownloadStatusTicker("已允许移动网络")
                 translator?.downloadModelIfNeeded()?.await()
+                stopDownloadStatusTicker()
                 isTranslatorReady = true
                 translationState = "翻译模型就绪（已允许移动网络下载）"
             } catch (error: Throwable) {
+                stopDownloadStatusTicker()
                 isTranslatorReady = false
                 translationState = "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
             }
@@ -504,6 +532,7 @@ class SubtitleOverlayService : Service() {
     override fun onDestroy() {
         audioLoopJob?.cancel()
         translatorJob?.cancel()
+        translatorDownloadStatusJob?.cancel()
         debugDumpWriter?.close()
         debugDumpWriter = null
         voskRecognizer?.close()

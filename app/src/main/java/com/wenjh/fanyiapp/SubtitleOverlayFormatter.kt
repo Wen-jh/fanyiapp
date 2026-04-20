@@ -40,6 +40,7 @@ object SubtitleOverlayFormatter {
         val safeTranslated = translated.ifBlank {
             when {
                 translationState.contains("先显示原文") -> "（翻译尚未就绪，当前先显示原文）"
+                translationState.contains("下载中") -> "（翻译模型下载中）"
                 translationState.contains("正在准备") -> "（翻译模型准备中）"
                 recognitionState.contains("实时") && original.isNotBlank() -> "（等待更稳定语句后翻译）"
                 else -> "（暂无翻译结果）"

@@ -86,6 +86,26 @@ class SubtitleOverlayFormatterTest {
     }
 
     @Test
+    fun composePipeline_showsDownloadHintWhenTranslatorModelIsDownloading() {
+        val result = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = "播放捕获模式",
+            captureState = "等待音频输入",
+            modelState = "本地识别模型就绪",
+            recognitionState = "等待本地识别启动",
+            translationState = "下载中（已耗时 12s，等待 Wi‑Fi；进度：ML Kit 未提供百分比）",
+            dumpState = "未启用",
+            original = "",
+            translated = "",
+            levelHint = ""
+        )
+
+        assertEquals(
+            "模式：播放捕获模式\n采集：等待音频输入\n模型：本地识别模型就绪\n识别：等待本地识别启动\n翻译：下载中（已耗时 12s，等待 Wi‑Fi；进度：ML Kit 未提供百分比）\n调试：未启用\n音量: 未知\n日语：（未识别到日语）\n中文：（翻译模型下载中）",
+            result
+        )
+    }
+
+    @Test
     fun composePipeline_showsRawTextHintWhenTranslatorNotReady() {
         val result = SubtitleOverlayFormatter.composePipeline(
             modeLabel = "播放捕获模式",
