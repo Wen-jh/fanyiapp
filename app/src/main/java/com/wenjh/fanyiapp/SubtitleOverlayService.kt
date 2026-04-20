@@ -151,7 +151,8 @@ class SubtitleOverlayService : Service() {
             audioSource?.stop()
             audioSource?.release()
             audioSource = PlaybackCaptureAudioSource.create(mediaProjection)
-        }.onSuccess { source ->
+        }.onSuccess {
+            val source = audioSource ?: return@onSuccess
             inputModeLabel = source.mode.label
             captureState = when {
                 playbackCaptureInitiallyAvailable && source.mode == AudioInputMode.MICROPHONE -> "播放捕获初始化失败，已切换到麦克风本地识别"
