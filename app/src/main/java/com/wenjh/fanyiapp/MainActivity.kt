@@ -4,15 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioPlaybackCaptureConfiguration
-import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
@@ -35,7 +28,7 @@ class MainActivity : AppCompatActivity() {
         if (granted) {
             requestProjection()
         } else {
-            showStatus("未授予录音权限，无法启动识别链路")
+            showStatus("未授予录音权限，无法启动本地识别链路")
         }
     }
 
@@ -47,7 +40,9 @@ class MainActivity : AppCompatActivity() {
             projectionDataIntent = result.data
             startSubtitleService()
         } else {
-            showStatus("未授予投屏/播放捕获权限，仍可只用麦克风识别")
+            projectionResultCode = null
+            projectionDataIntent = null
+            showStatus("未授予投屏/播放捕获权限，将退回麦克风本地识别")
             startSubtitleService()
         }
     }
@@ -62,20 +57,14 @@ class MainActivity : AppCompatActivity() {
         val overlayButton = findViewById<Button>(R.id.overlayButton)
         val stopButton = findViewById<Button>(R.id.stopButton)
 
-        startButton.setOnClickListener {
-            ensurePermissionsAndStart()
-        }
-
-        overlayButton.setOnClickListener {
-            requestOverlayPermission()
-        }
-
+        startButton.setOnClickListener { ensurePermissionsAndStart() }
+        overlayButton.setOnClickListener { requestOverlayPermission() }
         stopButton.setOnClickListener {
             stopService(Intent(this, SubtitleOverlayService::class.java))
             showStatus("服务已停止")
         }
 
-        showStatus("准备就绪：先授权悬浮窗，再点击开始。若设备缺少系统语音识别服务，悬浮窗会自动切到麦克风电平诊断模式，并明确提示需要安装/启用语音服务。")
+        showStatus("准备就绪：先授权悬浮窗，再点击开始。当前版本将优先尝试播放捕获+本地日语识别，失败时自动回退到麦克风本地识别。")
     }
 
     private fun ensurePermissionsAndStart() {
@@ -112,72 +101,15 @@ class MainActivity : AppCompatActivity() {
             action = SubtitleOverlayService.ACTION_START
             projectionResultCode?.let { putExtra(SubtitleOverlayService.EXTRA_RESULT_CODE, it) }
             projectionDataIntent?.let { putExtra(SubtitleOverlayService.EXTRA_DATA_INTENT, it) }
+            putExtra(SubtitleOverlayService.EXTRA_ENABLE_AUDIO_DUMP, BuildConfig.DEFAULT_AUDIO_DUMP_ENABLED)
+            putExtra(SubtitleOverlayService.EXTRA_AUDIO_DUMP_WAV, BuildConfig.DEFAULT_AUDIO_DUMP_WAV)
         }
         ContextCompat.startForegroundService(this, serviceIntent)
-        showStatus("服务启动中：悬浮窗将展示是否收到音频、识别中、翻译中等过程状态")
+        showStatus("服务启动中：悬浮窗将展示播放捕获、本地识别、翻译和音量链路状态")
     }
 
     private fun showStatus(message: String) {
         statusText.text = message
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-    }
-}
-
-class AudioCaptureProbe {
-    fun canAttemptPlaybackCapture(projection: MediaProjection): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
-
-        return try {
-            val config = AudioPlaybackCaptureConfiguration.Builder(projection)
-                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                .build()
-
-            val minBuffer = AudioRecord.getMinBufferSize(
-                16000,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
-
-            if (minBuffer <= 0) return false
-
-            val record = AudioRecord.Builder()
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(16000)
-                        .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                        .build()
-                )
-                .setBufferSizeInBytes(minBuffer.coerceAtLeast(16000))
-                .setAudioPlaybackCaptureConfig(config)
-                .build()
-
-            val ok = record.state == AudioRecord.STATE_INITIALIZED
-            record.release()
-            ok
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    fun microphoneFallbackAvailable(): Boolean {
-        val minBuffer = AudioRecord.getMinBufferSize(
-            16000,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minBuffer <= 0) return false
-
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            16000,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            minBuffer.coerceAtLeast(16000)
-        )
-        val ok = record.state == AudioRecord.STATE_INITIALIZED
-        record.release()
-        return ok
     }
 }

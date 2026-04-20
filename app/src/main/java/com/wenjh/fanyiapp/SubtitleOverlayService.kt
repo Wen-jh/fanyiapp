@@ -10,19 +10,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
-import android.speech.RecognitionListener
-import android.speech.RecognitionService
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -35,24 +27,25 @@ import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
-import kotlin.math.sqrt
 
 class SubtitleOverlayService : Service() {
     companion object {
         const val ACTION_START = "com.wenjh.fanyiapp.action.START"
         const val EXTRA_RESULT_CODE = "extra_result_code"
         const val EXTRA_DATA_INTENT = "extra_data_intent"
+        const val EXTRA_ENABLE_AUDIO_DUMP = "extra_enable_audio_dump"
+        const val EXTRA_AUDIO_DUMP_WAV = "extra_audio_dump_wav"
         private const val CHANNEL_ID = "subtitle_overlay"
         private const val NOTIFICATION_ID = 1001
     }
@@ -64,19 +57,27 @@ class SubtitleOverlayService : Service() {
     private var subtitleText: TextView? = null
     private var overlayParams: WindowManager.LayoutParams? = null
     private var mediaProjection: MediaProjection? = null
-    private var speechRecognizer: SpeechRecognizer? = null
     private var translator: Translator? = null
-    private var recognitionRestartJob: Job? = null
-    private var levelMonitorJob: Job? = null
-    private var inputMode: InputMode = InputMode.UNDECIDED
-    private var lastRms: Float = 0f
+    private var translatorJob: Job? = null
+    private var audioLoopJob: Job? = null
+    private var audioSource: PlaybackCaptureAudioSource? = null
+    private var voskRecognizer: VoskStreamingRecognizer? = null
+    private var debugDumpWriter: AudioDebugDumpWriter? = null
+    private val translationSegmenter = TranslationSegmenter()
+
+    private var inputModeLabel: String = "检测中"
+    private var playbackCaptureInitiallyAvailable: Boolean = false
     private var lastOriginalText: String = ""
     private var lastTranslatedText: String = ""
     private var captureState: String = "等待初始化"
+    private var modelState: String = "未开始"
     private var recognitionState: String = "未开始"
     private var translationState: String = "未开始"
-    private var isRecognizerReady: Boolean = false
+    private var dumpState: String = "未启用"
     private var isTranslatorReady: Boolean = false
+    private var enableAudioDump: Boolean = false
+    private var dumpAsWav: Boolean = true
+    private var lastLevelHint: String = "音量: 未知"
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -84,35 +85,33 @@ class SubtitleOverlayService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("正在初始化链路"))
 
-        if (intent?.action == ACTION_START) {
-            val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
-            val dataIntent = intent.getParcelableExtra<Intent>(EXTRA_DATA_INTENT)
-            if (resultCode != 0 && dataIntent != null) {
-                val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                mediaProjection = projectionManager.getMediaProjection(resultCode, dataIntent)
-            }
-            showOverlay()
-            serviceScope.launch {
-                bootstrapPipeline()
-            }
+        if (intent?.action != ACTION_START) {
+            stopSelf(startId)
+            return START_NOT_STICKY
         }
-        return START_STICKY
+
+        enableAudioDump = intent.getBooleanExtra(EXTRA_ENABLE_AUDIO_DUMP, false)
+        dumpAsWav = intent.getBooleanExtra(EXTRA_AUDIO_DUMP_WAV, true)
+        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
+        val dataIntent = intent.getParcelableExtra<Intent>(EXTRA_DATA_INTENT)
+        if (resultCode != 0 && dataIntent != null) {
+            val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjection = projectionManager.getMediaProjection(resultCode, dataIntent)
+        }
+        showOverlay()
+        serviceScope.launch { bootstrapPipeline() }
+        return START_NOT_STICKY
     }
 
     private suspend fun bootstrapPipeline() {
         determineInputMode()
         renderPipeline()
-
-        val availability = if (inputMode == InputMode.UNAVAILABLE) {
-            InputAvailability.UNAVAILABLE
-        } else {
-            InputAvailability.AVAILABLE
-        }
-
+        val availability = if (hasAnyAudioInput()) InputAvailability.AVAILABLE else InputAvailability.UNAVAILABLE
         SubtitlePipelineBootstrapPlanner.planFor(availability).forEach { step ->
             when (step) {
-                BootstrapStep.PREPARE_RECOGNIZER -> prepareSpeechRecognizer()
-                BootstrapStep.START_RECOGNITION -> maybeStartRecognition()
+                BootstrapStep.PREPARE_AUDIO_SOURCE -> prepareAudioSource()
+                BootstrapStep.PREPARE_ASR -> prepareLocalAsr()
+                BootstrapStep.START_RECOGNITION -> startRecognitionLoop()
                 BootstrapStep.PREPARE_TRANSLATOR -> serviceScope.launch { prepareTranslator() }
             }
             renderPipeline()
@@ -120,23 +119,69 @@ class SubtitleOverlayService : Service() {
     }
 
     private fun determineInputMode() {
-        val probe = AudioCaptureProbe()
-        val projection = mediaProjection
-        inputMode = when {
-            projection != null && probe.canAttemptPlaybackCapture(projection) -> InputMode.PLAYBACK_CAPTURE
-            probe.microphoneFallbackAvailable() -> InputMode.MICROPHONE
-            else -> InputMode.UNAVAILABLE
+        playbackCaptureInitiallyAvailable = PlaybackCaptureAudioSource.canAttemptPlaybackCapture(mediaProjection)
+        inputModeLabel = when {
+            playbackCaptureInitiallyAvailable -> AudioInputMode.PLAYBACK_CAPTURE.label
+            PlaybackCaptureAudioSource.microphoneFallbackAvailable() -> AudioInputMode.MICROPHONE.label
+            else -> "不可用"
         }
-
-        captureState = when (inputMode) {
-            InputMode.PLAYBACK_CAPTURE -> "已获得播放捕获权限，但当前版本实际识别仍走麦克风 SpeechRecognizer"
-            InputMode.MICROPHONE -> "播放捕获不可直用，已切换到麦克风识别"
-            InputMode.UNAVAILABLE -> "设备未通过音频输入探测"
-            InputMode.UNDECIDED -> "等待检测"
+        captureState = when (inputModeLabel) {
+            AudioInputMode.PLAYBACK_CAPTURE.label -> "已检测到播放捕获能力，准备建立真实 PCM 采集"
+            AudioInputMode.MICROPHONE.label -> "播放捕获不可用，准备回退到麦克风本地识别"
+            else -> "设备未通过音频输入探测"
         }
-        recognitionState = "等待识别器初始化"
+        modelState = "等待本地识别模型初始化"
+        recognitionState = "等待本地识别启动"
         translationState = "等待翻译模型初始化"
-        pushNotification("${inputMode.label} / ${captureState}")
+        dumpState = if (enableAudioDump) "等待写入器初始化" else "未启用"
+        pushNotification("$inputModeLabel / $captureState")
+    }
+
+    private fun hasAnyAudioInput(): Boolean {
+        return PlaybackCaptureAudioSource.canAttemptPlaybackCapture(mediaProjection) ||
+            PlaybackCaptureAudioSource.microphoneFallbackAvailable()
+    }
+
+    private fun prepareAudioSource() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            captureState = "缺少录音权限"
+            return
+        }
+        runCatching {
+            audioSource?.stop()
+            audioSource?.release()
+            audioSource = PlaybackCaptureAudioSource.create(mediaProjection)
+        }.onSuccess { source ->
+            inputModeLabel = source.mode.label
+            captureState = when {
+                playbackCaptureInitiallyAvailable && source.mode == AudioInputMode.MICROPHONE -> "播放捕获初始化失败，已切换到麦克风本地识别"
+                source.mode == AudioInputMode.PLAYBACK_CAPTURE -> "播放音频捕获已就绪"
+                else -> "麦克风本地识别已就绪"
+            }
+        }.onFailure { error ->
+            captureState = "音频源初始化失败：${error.message ?: error.javaClass.simpleName}"
+        }
+    }
+
+    private suspend fun prepareLocalAsr() {
+        modelState = ModelPreparationState.PREPARING.statusText
+        recognitionState = "等待本地识别启动"
+        renderPipeline()
+        val result = withContext(Dispatchers.IO) { VoskModelManager().prepareModel(this@SubtitleOverlayService) }
+        result.onSuccess { modelDir ->
+            runCatching {
+                voskRecognizer?.close()
+                val rate = audioSource?.sampleRate?.toFloat() ?: PlaybackCaptureAudioSource.DEFAULT_SAMPLE_RATE.toFloat()
+                voskRecognizer = VoskStreamingRecognizer(modelDir, rate)
+                modelState = ModelPreparationState.READY.statusText
+            }.onFailure { error ->
+                modelState = "${ModelPreparationState.FAILED.statusText}：${error.message ?: error.javaClass.simpleName}"
+                recognitionState = "本地识别器未就绪"
+            }
+        }.onFailure { error ->
+            modelState = "${ModelPreparationState.FAILED.statusText}：${error.message ?: error.javaClass.simpleName}"
+            recognitionState = "本地识别器未就绪"
+        }
     }
 
     private suspend fun prepareTranslator() {
@@ -155,7 +200,7 @@ class SubtitleOverlayService : Service() {
             translator?.downloadModelIfNeeded(DownloadConditions.Builder().requireWifi().build())?.await()
             isTranslatorReady = true
             translationState = "翻译模型就绪"
-        } catch (wifiError: Throwable) {
+        } catch (_: Throwable) {
             try {
                 translator?.downloadModelIfNeeded()?.await()
                 isTranslatorReady = true
@@ -168,286 +213,154 @@ class SubtitleOverlayService : Service() {
         renderPipeline()
     }
 
-    private fun prepareSpeechRecognizer() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            recognitionState = "缺少录音权限"
+    private fun startRecognitionLoop() {
+        val source = audioSource
+        val recognizer = voskRecognizer
+        if (source == null || recognizer == null) {
+            if (source == null) captureState = "音频源未就绪"
+            if (recognizer == null) recognitionState = "本地识别器未就绪"
             renderPipeline()
             return
         }
 
-        val recognitionSupport = inspectRecognitionSupport()
-        if (!recognitionSupport.available) {
-            recognitionState = recognitionSupport.message
-            captureState = "已切换为麦克风电平诊断模式"
-            translationState = if (translationState.contains("正在准备") || translationState.contains("就绪")) {
-                translationState
-            } else {
-                "等待识别服务恢复后才能产生日语文本"
-            }
-            startFallbackLevelMonitoring()
-            renderPipeline()
-            return
-        }
-
-        stopFallbackLevelMonitoring()
-        speechRecognizer?.destroy()
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    isRecognizerReady = true
-                    recognitionState = "已就绪，等待日语语音"
-                    captureState = "麦克风监听中"
-                    renderPipeline()
-                }
-
-                override fun onBeginningOfSpeech() {
-                    captureState = "已接收到音频"
-                    recognitionState = "正在识别"
-                    renderPipeline()
-                }
-
-                override fun onRmsChanged(rmsdB: Float) {
-                    lastRms = rmsdB
-                    val normalized = (((rmsdB + 2f) / 12f) * 100f).coerceIn(0f, 100f)
-                    captureState = if (normalized > 8f) "已接收到音频" else "等待音频输入"
-                    renderPipeline(levelOverride = "音量: ${normalized.toInt()}%")
-                }
-
-                override fun onBufferReceived(buffer: ByteArray?) = Unit
-
-                override fun onEndOfSpeech() {
-                    recognitionState = "已收到语音，等待识别结果"
-                    renderPipeline()
-                }
-
-                override fun onError(error: Int) {
-                    recognitionState = "识别错误: ${speechErrorToText(error)}"
-                    if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                        captureState = "未检测到可识别语音"
-                    }
-                    renderPipeline()
-                    scheduleRecognitionRestart()
-                }
-
-                override fun onResults(results: Bundle?) {
-                    val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()
-                        ?.trim()
-                        .orEmpty()
-                    if (text.isBlank()) {
-                        recognitionState = "识别完成，但文本为空"
-                        renderPipeline()
-                        scheduleRecognitionRestart()
-                        return
-                    }
-                    lastOriginalText = text
-                    recognitionState = "已识别到日语文本"
-                    renderPipeline()
-                    translateRecognizedText(text)
-                }
-
-                override fun onPartialResults(partialResults: Bundle?) {
-                    val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()
-                        ?.trim()
-                        .orEmpty()
-                    if (partial.isNotBlank()) {
-                        lastOriginalText = partial
-                        recognitionState = "识别中（实时）"
-                        renderPipeline()
-                    }
-                }
-
-                override fun onEvent(eventType: Int, params: Bundle?) = Unit
-            })
-        }
-
-        recognitionState = "识别器已初始化"
-    }
-
-    private fun inspectRecognitionSupport(): RecognitionSupport {
-        if (SpeechRecognizer.isRecognitionAvailable(this)) {
-            return RecognitionSupport(true, "SpeechRecognizer 可用")
-        }
-
-        val serviceIntent = Intent(RecognitionService.SERVICE_INTERFACE)
-        val serviceFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong())
-        } else {
-            null
-        }
-        val services = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.queryIntentServices(serviceIntent, serviceFlags!!)
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.queryIntentServices(serviceIntent, PackageManager.MATCH_ALL)
-        }
-
-        val speechActivity = packageManager.resolveActivity(
-            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH),
-            PackageManager.MATCH_DEFAULT_ONLY
-        )
-
-        val message = when {
-            services.isEmpty() && speechActivity == null -> "系统 SpeechRecognizer 不可用：设备未安装语音识别服务（请安装/启用 Google 语音输入或系统语音服务）"
-            services.isEmpty() -> "系统 SpeechRecognizer 不可用：语音识别 Activity 存在，但后台识别服务缺失"
-            else -> "系统 SpeechRecognizer 不可用：检测到服务组件，但当前系统未开放给应用"
-        }
-        return RecognitionSupport(false, message)
-    }
-
-    private fun maybeStartRecognition() {
-        if (inputMode == InputMode.UNAVAILABLE) {
-            captureState = "无法开始，设备探测失败"
-            renderPipeline()
-            return
-        }
-        if (!isRecognizerReady && speechRecognizer == null) {
-            renderPipeline()
-        }
-        startListening()
-    }
-
-    private fun startListening() {
-        val recognizer = speechRecognizer ?: return
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ja-JP")
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ja-JP")
-            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "ja-JP")
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
-        }
-        recognitionState = "正在启动识别"
-        renderPipeline()
-        try {
-            recognizer.startListening(intent)
-        } catch (error: Throwable) {
-            recognitionState = "启动识别失败：${error.message ?: error.javaClass.simpleName}"
-            renderPipeline()
-        }
-    }
-
-    private fun startFallbackLevelMonitoring() {
-        if (levelMonitorJob?.isActive == true) return
-        levelMonitorJob = serviceScope.launch(Dispatchers.IO) {
-            val minBuffer = AudioRecord.getMinBufferSize(
-                16000,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
-            if (minBuffer <= 0) {
-                withContext(Dispatchers.Main) {
-                    captureState = "麦克风电平诊断不可用"
-                    renderPipeline(levelOverride = "音量: 未知")
-                }
-                return@launch
-            }
-
-            val record = try {
-                AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    16000,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    minBuffer.coerceAtLeast(16000)
+        audioLoopJob?.cancel()
+        audioLoopJob = serviceScope.launch(Dispatchers.IO) {
+            val buffer = ShortArray(3200)
+            debugDumpWriter?.close()
+            debugDumpWriter = runCatching {
+                AudioDebugDumpWriter.create(
+                    baseDir = getExternalFilesDir("audio-dumps") ?: filesDir,
+                    enabled = enableAudioDump,
+                    preferWav = dumpAsWav,
+                    sampleRate = source.sampleRate,
+                    channelCount = source.channelCount
                 )
-            } catch (_: Throwable) {
-                null
-            }
-
-            if (record == null || record.state != AudioRecord.STATE_INITIALIZED) {
-                record?.release()
-                withContext(Dispatchers.Main) {
-                    captureState = "麦克风电平诊断初始化失败"
-                    renderPipeline(levelOverride = "音量: 未知")
+            }.onSuccess { writer ->
+                dumpState = when {
+                    !enableAudioDump -> "未启用"
+                    writer != null -> "调试录音已保存"
+                    else -> "调试录音未启用"
                 }
-                return@launch
+            }.onFailure { error ->
+                dumpState = "调试录音保存失败：${error.message ?: error.javaClass.simpleName}"
+            }.getOrNull()
+            runCatching { source.start() }
+                .onFailure { error ->
+                    serviceScope.launch {
+                        captureState = "音频源启动失败：${error.message ?: error.javaClass.simpleName}"
+                        renderPipeline()
+                    }
+                    return@launch
+                }
+
+            serviceScope.launch {
+                captureState = if (source.mode == AudioInputMode.PLAYBACK_CAPTURE) "播放音频捕获中" else "麦克风音频采集中"
+                recognitionState = "本地识别中（实时）"
+                renderPipeline()
             }
 
-            val samples = ShortArray(2048)
             try {
-                record.startRecording()
                 while (isActive) {
-                    val read = record.read(samples, 0, samples.size)
-                    if (read > 0) {
-                        val level = normalizePcmLevel(samples, read)
-                        withContext(Dispatchers.Main) {
-                            lastRms = ((level / 100f) * 12f) - 2f
-                            captureState = if (level > 6) "已检测到麦克风音频（诊断模式）" else "等待麦克风音频（诊断模式）"
-                            renderPipeline(levelOverride = "音量: ${level.toInt()}%")
+                    val read = source.read(buffer)
+                    if (read <= 0) continue
+                    debugDumpWriter?.write(buffer, read)
+                    val level = PlaybackCaptureAudioSource.normalizePcmLevel(buffer, read)
+                    val levelHint = "音量: ${level.toInt()}%"
+                    val capture = when (source.mode) {
+                        AudioInputMode.PLAYBACK_CAPTURE -> "播放音频捕获中"
+                        AudioInputMode.MICROPHONE -> "麦克风音频采集中"
+                    }
+                    serviceScope.launch {
+                        lastLevelHint = levelHint
+                        captureState = capture
+                        renderPipeline(levelOverride = levelHint)
+                    }
+                    when (val event = recognizer.accept(buffer, read)) {
+                        is AsrEvent.Partial -> serviceScope.launch {
+                            lastOriginalText = event.text
+                            recognitionState = "本地识别中（实时）"
+                            val candidate = translationSegmenter.onPartial(event.text, SystemClock.elapsedRealtime())
+                            if (candidate != null) {
+                                translateRecognizedText(candidate, provisional = true)
+                            } else {
+                                translationState = if (isTranslatorReady) "等待稳定分段后再翻译" else translationState
+                                renderPipeline(levelOverride = levelHint)
+                            }
                         }
-                    } else {
-                        withContext(Dispatchers.Main) {
-                            captureState = "等待麦克风音频（诊断模式）"
-                            renderPipeline(levelOverride = "音量: 0%")
+
+                        is AsrEvent.Final -> serviceScope.launch {
+                            lastOriginalText = event.text
+                            recognitionState = "本地识别完成"
+                            translationSegmenter.onFinal(event.text)?.let {
+                                translateRecognizedText(it, provisional = false)
+                            } ?: run {
+                                if (lastTranslatedText.isBlank()) {
+                                    translationState = "等待下一句翻译"
+                                }
+                                renderPipeline(levelOverride = levelHint)
+                            }
                         }
-                        delay(120)
+
+                        null -> Unit
                     }
                 }
-            } catch (_: Throwable) {
-                withContext(Dispatchers.Main) {
-                    captureState = "麦克风电平诊断中断"
-                    renderPipeline(levelOverride = "音量: 未知")
+            } catch (error: Throwable) {
+                serviceScope.launch {
+                    recognitionState = "本地识别异常：${error.message ?: error.javaClass.simpleName}"
+                    renderPipeline()
                 }
             } finally {
-                try {
-                    record.stop()
-                } catch (_: Throwable) {
+                recognizer.flushFinal()?.let { finalEvent ->
+                    serviceScope.launch {
+                        lastOriginalText = finalEvent.text
+                        recognitionState = "本地识别完成"
+                        translationSegmenter.onFinal(finalEvent.text)?.let {
+                            translateRecognizedText(it, provisional = false)
+                        } ?: run {
+                            if (lastTranslatedText.isBlank()) {
+                                translationState = "等待下一句翻译"
+                            }
+                            renderPipeline()
+                        }
+                    }
                 }
-                record.release()
+                runCatching { source.stop() }
+                debugDumpWriter?.close()
+                debugDumpWriter = null
             }
         }
     }
 
-    private fun stopFallbackLevelMonitoring() {
-        levelMonitorJob?.cancel()
-        levelMonitorJob = null
-    }
-
-    private fun normalizePcmLevel(buffer: ShortArray, read: Int): Float {
-        if (read <= 0) return 0f
-        var sum = 0.0
-        for (i in 0 until read) {
-            val sample = buffer[i].toDouble()
-            sum += sample * sample
-        }
-        val rms = sqrt(sum / read)
-        return ((rms / 2000.0) * 100.0).coerceIn(0.0, 100.0).toFloat()
-    }
-
-    private fun scheduleRecognitionRestart() {
-        recognitionRestartJob?.cancel()
-        recognitionRestartJob = serviceScope.launch {
-            delay(1200)
-            if (isActive) startListening()
-        }
-    }
-
-    private fun translateRecognizedText(text: String) {
+    private fun translateRecognizedText(text: String, provisional: Boolean) {
         val currentTranslator = translator
         if (!isTranslatorReady || currentTranslator == null) {
             translationState = "翻译器未就绪，先显示原文"
             lastTranslatedText = ""
             renderPipeline()
-            scheduleRecognitionRestart()
             return
         }
 
-        serviceScope.launch {
-            translationState = "正在翻译"
+        translatorJob?.cancel()
+        translatorJob = serviceScope.launch {
+            translationState = if (provisional) "正在低延迟翻译（预测）" else "正在翻译"
             renderPipeline()
             try {
-                val translated = withContext(Dispatchers.IO) { currentTranslator.translate(text).await() }
-                lastTranslatedText = translated.trim()
-                translationState = if (lastTranslatedText.isBlank()) "翻译完成，但结果为空" else "翻译完成"
+                val translated = withContext(Dispatchers.IO) { currentTranslator.translate(text).await().trim() }
+                if (translated.isNotBlank()) {
+                    lastTranslatedText = translated
+                    translationState = if (provisional) "低延迟翻译已更新" else "翻译完成"
+                } else {
+                    translationState = "翻译完成，但结果为空"
+                }
+            } catch (_: CancellationException) {
+                throw CancellationException()
             } catch (error: Throwable) {
-                lastTranslatedText = ""
+                if (!provisional) {
+                    lastTranslatedText = ""
+                }
                 translationState = "翻译失败：${error.message ?: error.javaClass.simpleName}"
             }
             renderPipeline()
-            scheduleRecognitionRestart()
         }
     }
 
@@ -521,38 +434,19 @@ class SubtitleOverlayService : Service() {
     }
 
     private fun renderPipeline(levelOverride: String? = null) {
-        val text = SubtitleOverlayFormatter.composePipeline(
-            modeLabel = inputMode.label,
+        val status = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = inputModeLabel,
             captureState = captureState,
+            modelState = modelState,
             recognitionState = recognitionState,
             translationState = translationState,
+            dumpState = dumpState,
             original = lastOriginalText,
             translated = lastTranslatedText,
-            levelHint = levelOverride ?: levelHintFromRms(lastRms)
+            levelHint = levelOverride ?: lastLevelHint
         )
-        subtitleText?.text = text
-        pushNotification("${inputMode.label} / ${recognitionState}")
-    }
-
-    private fun levelHintFromRms(rms: Float): String {
-        if (rms == 0f) return "音量: 未知"
-        val normalized = (((rms + 2f) / 12f) * 100f).coerceIn(0f, 100f)
-        return "音量: ${normalized.toInt()}%"
-    }
-
-    private fun speechErrorToText(code: Int): String {
-        return when (code) {
-            SpeechRecognizer.ERROR_AUDIO -> "音频输入异常"
-            SpeechRecognizer.ERROR_CLIENT -> "客户端异常"
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "录音权限不足"
-            SpeechRecognizer.ERROR_NETWORK -> "网络错误"
-            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "网络超时"
-            SpeechRecognizer.ERROR_NO_MATCH -> "未识别到匹配文本"
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "识别器忙碌"
-            SpeechRecognizer.ERROR_SERVER -> "识别服务异常"
-            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "语音超时"
-            else -> "未知错误($code)"
-        }
+        subtitleText?.text = status
+        pushNotification(status)
     }
 
     private fun buildNotification(status: String): Notification {
@@ -591,17 +485,20 @@ class SubtitleOverlayService : Service() {
     }
 
     override fun onDestroy() {
-        recognitionRestartJob?.cancel()
-        stopFallbackLevelMonitoring()
-        speechRecognizer?.destroy()
-        speechRecognizer = null
+        audioLoopJob?.cancel()
+        translatorJob?.cancel()
+        debugDumpWriter?.close()
+        debugDumpWriter = null
+        voskRecognizer?.close()
+        voskRecognizer = null
+        audioSource?.stop()
+        audioSource?.release()
+        audioSource = null
         translator?.close()
         translator = null
         mediaProjection?.stop()
         mediaProjection = null
-        overlayView?.let { view ->
-            windowManager?.removeView(view)
-        }
+        overlayView?.let { view -> windowManager?.removeView(view) }
         overlayView = null
         overlayParams = null
         windowManager = null
@@ -609,15 +506,3 @@ class SubtitleOverlayService : Service() {
         super.onDestroy()
     }
 }
-
-private enum class InputMode(val label: String) {
-    UNDECIDED("检测中"),
-    PLAYBACK_CAPTURE("播放捕获+麦克风识别"),
-    MICROPHONE("麦克风识别"),
-    UNAVAILABLE("不可用")
-}
-
-private data class RecognitionSupport(
-    val available: Boolean,
-    val message: String
-)

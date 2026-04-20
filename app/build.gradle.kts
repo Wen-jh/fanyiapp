@@ -11,13 +11,15 @@ android {
         applicationId = "com.wenjh.fanyiapp"
         minSdk = 29
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+        buildConfigField("boolean", "DEFAULT_AUDIO_DUMP_ENABLED", "false")
+        buildConfigField("boolean", "DEFAULT_AUDIO_DUMP_WAV", "true")
     }
 
     buildTypes {
@@ -46,6 +48,15 @@ android {
         viewBinding = true
         buildConfig = true
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
@@ -59,6 +70,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("com.google.mlkit:translate:17.0.2")
+    implementation("com.alphacephei:vosk-android:0.3.75")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

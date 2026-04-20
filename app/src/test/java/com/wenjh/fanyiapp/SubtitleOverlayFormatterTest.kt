@@ -50,15 +50,17 @@ class SubtitleOverlayFormatterTest {
         val result = SubtitleOverlayFormatter.composePipeline(
             modeLabel = "麦克风模式",
             captureState = "已接收到音频",
+            modelState = "本地识别模型就绪",
             recognitionState = "正在识别",
             translationState = "正在翻译",
+            dumpState = "未启用",
             original = "お願いします",
             translated = "拜托了",
             levelHint = "音量: 27%"
         )
 
         assertEquals(
-            "模式：麦克风模式\n采集：已接收到音频\n识别：正在识别\n翻译：正在翻译\n音量: 27%\n日语：お願いします\n中文：拜托了",
+            "模式：麦克风模式\n采集：已接收到音频\n模型：本地识别模型就绪\n识别：正在识别\n翻译：正在翻译\n调试：未启用\n音量: 27%\n日语：お願いします\n中文：拜托了",
             result
         )
     }
@@ -68,15 +70,17 @@ class SubtitleOverlayFormatterTest {
         val result = SubtitleOverlayFormatter.composePipeline(
             modeLabel = "播放捕获模式",
             captureState = "等待音频输入",
-            recognitionState = "已就绪，等待日语语音",
+            modelState = "本地识别模型就绪",
+            recognitionState = "等待本地识别启动",
             translationState = "正在准备日语→中文翻译模型（后台）",
+            dumpState = "未启用",
             original = "",
             translated = "",
             levelHint = ""
         )
 
         assertEquals(
-            "模式：播放捕获模式\n采集：等待音频输入\n识别：已就绪，等待日语语音\n翻译：正在准备日语→中文翻译模型（后台）\n音量: 未知\n日语：（未识别到日语）\n中文：（翻译模型准备中）",
+            "模式：播放捕获模式\n采集：等待音频输入\n模型：本地识别模型就绪\n识别：等待本地识别启动\n翻译：正在准备日语→中文翻译模型（后台）\n调试：未启用\n音量: 未知\n日语：（未识别到日语）\n中文：（翻译模型准备中）",
             result
         )
     }
@@ -86,17 +90,38 @@ class SubtitleOverlayFormatterTest {
         val result = SubtitleOverlayFormatter.composePipeline(
             modeLabel = "播放捕获模式",
             captureState = "已接收到音频",
-            recognitionState = "已识别到日语文本",
+            modelState = "本地识别模型就绪",
+            recognitionState = "本地识别完成",
             translationState = "翻译器未就绪，先显示原文",
+            dumpState = "未启用",
             original = "テストです",
             translated = "",
             levelHint = "音量: 11%"
         )
 
         assertEquals(
-            "模式：播放捕获模式\n采集：已接收到音频\n识别：已识别到日语文本\n翻译：翻译器未就绪，先显示原文\n音量: 11%\n日语：テストです\n中文：（翻译尚未就绪，当前先显示原文）",
+            "模式：播放捕获模式\n采集：已接收到音频\n模型：本地识别模型就绪\n识别：本地识别完成\n翻译：翻译器未就绪，先显示原文\n调试：未启用\n音量: 11%\n日语：テストです\n中文：（翻译尚未就绪，当前先显示原文）",
             result
         )
+    }
+
+    @Test
+    fun composePipeline_showsPartialAsrFallbackWhileWaitingForStableTranslation() {
+        val result = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = "播放捕获+本地识别",
+            captureState = "播放音频捕获中",
+            modelState = "本地识别模型就绪",
+            recognitionState = "本地识别中（实时）",
+            translationState = "等待稳定分段后再翻译",
+            dumpState = "调试录音已保存",
+            original = "ありが",
+            translated = "",
+            levelHint = "音量: 42%"
+        )
+
+        assertTrue(result.contains("中文：（等待更稳定语句后翻译）"))
+        assertTrue(result.contains("调试：调试录音已保存"))
+        assertTrue(result.contains("音量: 42%"))
     }
 
     @Test
@@ -104,33 +129,57 @@ class SubtitleOverlayFormatterTest {
         val result = SubtitleOverlayFormatter.composePipeline(
             modeLabel = "播放捕获模式",
             captureState = "等待音频输入",
+            modelState = "未开始",
             recognitionState = "未开始",
             translationState = "未开始",
+            dumpState = "未启用",
             original = "",
             translated = "",
             levelHint = ""
         )
 
         assertEquals(
-            "模式：播放捕获模式\n采集：等待音频输入\n识别：未开始\n翻译：未开始\n音量: 未知\n日语：（未识别到日语）\n中文：（暂无翻译结果）",
+            "模式：播放捕获模式\n采集：等待音频输入\n模型：未开始\n识别：未开始\n翻译：未开始\n调试：未启用\n音量: 未知\n日语：（未识别到日语）\n中文：（暂无翻译结果）",
             result
         )
     }
 
     @Test
-    fun composePipeline_surfacesDetailedSpeechRecognizerUnavailableMessage() {
+    fun composePipeline_surfacesDetailedLocalAsrStates() {
         val result = SubtitleOverlayFormatter.composePipeline(
-            modeLabel = "播放捕获+麦克风识别",
-            captureState = "已切换为麦克风电平诊断模式",
-            recognitionState = "系统 SpeechRecognizer 不可用：设备未安装语音识别服务（请安装/启用 Google 语音输入或系统语音服务）",
-            translationState = "等待识别服务恢复后才能产生日语文本",
+            modeLabel = "播放捕获+本地识别",
+            captureState = "播放音频捕获中",
+            modelState = "本地识别模型就绪",
+            recognitionState = "本地识别中（实时）",
+            translationState = "等待稳定分段后再翻译",
+            dumpState = "调试录音已保存",
             original = "",
             translated = "",
-            levelHint = "音量: 42%"
+            levelHint = "音量: 9%"
         )
 
-        assertTrue(result.contains("已切换为麦克风电平诊断模式"))
-        assertTrue(result.contains("请安装/启用 Google 语音输入或系统语音服务"))
-        assertTrue(result.contains("音量: 42%"))
+        assertTrue(result.contains("调试：调试录音已保存"))
+        assertTrue(result.contains("模型：本地识别模型就绪"))
+        assertTrue(result.contains("识别：本地识别中（实时）"))
+        assertTrue(result.contains("音量: 9%"))
+    }
+
+    @Test
+    fun composePipeline_surfacesFallbackAndSeparatedStatesForLocalAsrFlow() {
+        val result = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = "麦克风+本地识别",
+            captureState = "播放捕获初始化失败，已切换到麦克风本地识别",
+            modelState = "本地日语识别模型就绪",
+            recognitionState = "等待本地识别启动",
+            translationState = "等待翻译模型初始化",
+            dumpState = "等待写入器初始化",
+            original = "",
+            translated = "",
+            levelHint = ""
+        )
+
+        assertTrue(result.contains("采集：播放捕获初始化失败，已切换到麦克风本地识别"))
+        assertTrue(result.contains("模型：本地日语识别模型就绪"))
+        assertTrue(result.contains("调试：等待写入器初始化"))
     }
 }
