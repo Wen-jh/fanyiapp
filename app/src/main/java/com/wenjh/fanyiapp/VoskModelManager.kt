@@ -3,6 +3,7 @@ package com.wenjh.fanyiapp
 import android.content.Context
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 
 enum class ModelPreparationState(val statusText: String) {
     PREPARING("正在准备本地日语识别模型"),
@@ -20,7 +21,14 @@ class VoskModelManager(
         private const val READY_MARKER = ".ready"
         private val REQUIRED_MODEL_PATHS = listOf(
             "am/final.mdl",
-            "conf/model.conf"
+            "conf/model.conf",
+            "graph/Gr.fst",
+            "graph/HCLr.fst",
+            "graph/phones/word_boundary.int"
+        )
+        private val OPTIONAL_TOP_LEVEL_WRAPPERS = listOf(
+            "vosk-model-small-ja-0.22",
+            MODEL_DIR_NAME
         )
     }
 
@@ -47,8 +55,8 @@ class VoskModelManager(
     fun prepareModel(context: Context): Result<File> {
         return runCatching {
             val rootDir = File(context.filesDir, "vosk")
-            if (!rootDir.exists()) {
-                rootDir.mkdirs()
+            if (!rootDir.exists() && !rootDir.mkdirs()) {
+                throw IOException("无法创建模型根目录: ${rootDir.absolutePath}")
             }
             val resolution = resolveModelState(rootDir)
             if (resolution.state == ModelPreparationState.READY && hasRequiredModelFiles(resolution.modelDir)) {
@@ -57,8 +65,10 @@ class VoskModelManager(
             if (resolution.modelDir.exists()) {
                 resolution.modelDir.deleteRecursively()
             }
-            resolution.modelDir.mkdirs()
-            copyAssetDirectory(context, assetRoot, resolution.modelDir)
+            if (!resolution.modelDir.mkdirs()) {
+                throw IOException("无法创建模型目录: ${resolution.modelDir.absolutePath}")
+            }
+            copyModelAssets(context, resolution.modelDir)
             if (!hasRequiredModelFiles(resolution.modelDir)) {
                 throw IllegalStateException(
                     "未发现真实 Vosk 日语模型文件，请将 vosk-model-small-ja-0.22 解压到 app/src/main/assets/$assetRoot/"
@@ -66,6 +76,21 @@ class VoskModelManager(
             }
             resolution.markerFile.writeText("ready")
             resolution.modelDir
+        }
+    }
+
+    private fun copyModelAssets(context: Context, targetDir: File) {
+        val assetManager = context.assets
+        val directRootChildren = assetManager.list(assetRoot).orEmpty()
+        val nestedRoot = OPTIONAL_TOP_LEVEL_WRAPPERS
+            .asSequence()
+            .map { "$assetRoot/$it" }
+            .firstOrNull { assetManager.list(it)?.isNotEmpty() == true }
+
+        when {
+            nestedRoot != null -> copyAssetDirectory(context, nestedRoot, targetDir)
+            directRootChildren.isNotEmpty() -> copyAssetDirectory(context, assetRoot, targetDir)
+            else -> throw IOException("模型资源目录为空或不存在: $assetRoot")
         }
     }
 
