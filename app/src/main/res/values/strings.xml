@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">实时翻译验证版</string>
+    <string name="overlay_show_details">显示详情</string>
+    <string name="overlay_hide_details">隐藏详情</string>
 </resources>

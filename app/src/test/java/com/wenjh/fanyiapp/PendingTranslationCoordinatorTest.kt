@@ -38,6 +38,16 @@ class PendingTranslationCoordinatorTest {
     }
 
     @Test
+    fun rememberPending_keepsLongerFinalCandidateOverShorterFinal() {
+        val coordinator = PendingTranslationCoordinator()
+
+        coordinator.rememberPending("ありが", provisional = false)
+        coordinator.rememberPending("ありがとうございます", provisional = false)
+
+        assertEquals(PendingTranslationRequest("ありがとうございます", false), coordinator.peek())
+    }
+
+    @Test
     fun hasPending_reflectsQueueState() {
         val coordinator = PendingTranslationCoordinator()
 
@@ -46,5 +56,27 @@ class PendingTranslationCoordinatorTest {
         assertTrue(coordinator.hasPending())
         coordinator.consumeReady()
         assertFalse(coordinator.hasPending())
+    }
+
+    @Test
+    fun requeueInFlight_preservesActiveWhenNothingElseQueued() {
+        val coordinator = PendingTranslationCoordinator()
+        coordinator.markInFlight("こんにちは", provisional = true)
+
+        val requeued = coordinator.requeueInFlight()
+
+        assertEquals(PendingTranslationRequest("こんにちは", true), requeued)
+        assertEquals(PendingTranslationRequest("こんにちは", true), coordinator.consumeReady())
+    }
+
+    @Test
+    fun hasInFlight_reflectsCurrentlyRunningTranslation() {
+        val coordinator = PendingTranslationCoordinator()
+
+        assertFalse(coordinator.hasInFlight())
+        coordinator.markInFlight("こんにちは", provisional = true)
+        assertTrue(coordinator.hasInFlight())
+        coordinator.consumeReadyAfter("こんにちは")
+        assertFalse(coordinator.hasInFlight())
     }
 }

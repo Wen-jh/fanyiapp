@@ -29,14 +29,22 @@ class TranslationSegmenterTest {
 
     @Test
     fun punctuatedPartial_flushesImmediatelyWithoutWaitingForRepeatFrame() {
-        val segmenter = TranslationSegmenter(minPartialLength = 6, stableWindowMs = 650)
+        val segmenter = TranslationSegmenter(minPartialLength = 8, stableWindowMs = 800)
         assertEquals("こんにちは。", segmenter.onPartial("こんにちは。", 1000))
     }
 
     @Test
     fun shortPartialStillWaitsWhenNotStableAndNotPunctuated() {
-        val segmenter = TranslationSegmenter(minPartialLength = 6, stableWindowMs = 650)
+        val segmenter = TranslationSegmenter(minPartialLength = 8, stableWindowMs = 800)
         assertNull(segmenter.onPartial("こんにち", 1000))
+    }
+
+    @Test
+    fun defaultSegmenter_waitsLongerBeforeFlushingRoughRealtimePartial() {
+        val segmenter = TranslationSegmenter()
+        assertNull(segmenter.onPartial("ありがとうございます", 1000))
+        assertNull(segmenter.onPartial("ありがとうございます", 1700))
+        assertEquals("ありがとうございます", segmenter.onPartial("ありがとうございます", 1850))
     }
 
     @Test

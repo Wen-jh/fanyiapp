@@ -34,7 +34,8 @@ object SubtitleOverlayFormatter {
         dumpState: String,
         original: String,
         translated: String,
-        levelHint: String
+        levelHint: String,
+        showDetails: Boolean = true
     ): String {
         val safeOriginal = original.ifBlank { "（未识别到日语）" }
         val safeTranslated = translated.ifBlank {
@@ -42,10 +43,19 @@ object SubtitleOverlayFormatter {
                 translationState.contains("先显示原文") -> "（翻译尚未就绪，当前先显示原文）"
                 translationState.contains("下载中") -> "（翻译模型下载中）"
                 translationState.contains("正在准备") -> "（翻译模型准备中）"
+                translationState.contains("等待更完整翻译") -> "（等待更完整翻译结果）"
                 recognitionState.contains("实时") && original.isNotBlank() -> "（等待更稳定语句后翻译）"
                 else -> "（暂无翻译结果）"
             }
         }
+
+        if (!showDetails) {
+            return listOf(
+                "日语：$safeOriginal",
+                "中文：$safeTranslated"
+            ).joinToString("\n")
+        }
+
         val safeLevelHint = levelHint.ifBlank { "音量: 未知" }
         return listOf(
             "模式：$modeLabel",

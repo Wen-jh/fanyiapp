@@ -19,7 +19,10 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -55,6 +58,7 @@ class SubtitleOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var subtitleText: TextView? = null
+    private var detailsToggleButton: Button? = null
     private var overlayParams: WindowManager.LayoutParams? = null
     private var mediaProjection: MediaProjection? = null
     private var translator: Translator? = null
@@ -77,6 +81,8 @@ class SubtitleOverlayService : Service() {
     private var translationState: String = "未开始"
     private var dumpState: String = "未启用"
     private var isTranslatorReady: Boolean = false
+    private var showOverlayDetails: Boolean = true
+    private var hasAutoCollapsedAfterTranslatorReady: Boolean = false
     private var enableAudioDump: Boolean = false
     private var dumpAsWav: Boolean = true
     private var lastLevelHint: String = "音量: 未知"
@@ -189,6 +195,7 @@ class SubtitleOverlayService : Service() {
 
     private suspend fun prepareTranslator() {
         isTranslatorReady = false
+        hasAutoCollapsedAfterTranslatorReady = hasAutoCollapsedAfterTranslatorReady || !showOverlayDetails
         translatorDownloadStatusJob?.cancel()
         translationState = "正在准备日语→中文翻译模型（后台）"
         renderPipeline()
@@ -376,19 +383,40 @@ class SubtitleOverlayService : Service() {
             return
         }
 
-        translatorJob?.cancel()
+        if (pendingTranslationCoordinator.hasInFlight()) {
+            pendingTranslationCoordinator.rememberPending(normalizedText, provisional)
+            translationState = if (provisional) "等待更完整语句后接力翻译" else "等待当前翻译完成后接力"
+            renderPipeline()
+            return
+        }
+
+        pendingTranslationCoordinator.markInFlight(normalizedText, provisional)
         translatorJob = serviceScope.launch {
             translationState = if (provisional) "正在低延迟翻译（预测）" else "正在翻译"
             renderPipeline()
             try {
                 val translated = withContext(Dispatchers.IO) { currentTranslator.translate(normalizedText).await().trim() }
+                val queuedFollowUp = pendingTranslationCoordinator.peek()
+                val suppressProvisionalResult = provisional && queuedFollowUp != null &&
+                    (!queuedFollowUp.provisional || queuedFollowUp.text.length >= normalizedText.length)
                 if (translated.isNotBlank()) {
-                    lastTranslatedText = translated
-                    translationState = if (provisional) "低延迟翻译已更新" else "翻译完成"
+                    if (suppressProvisionalResult) {
+                        lastTranslatedText = ""
+                    } else {
+                        lastTranslatedText = translated
+                    }
+                    translationState = if (suppressProvisionalResult) {
+                        "已收到更完整语句，等待更完整翻译"
+                    } else if (provisional) {
+                        "低延迟翻译已更新"
+                    } else {
+                        "翻译完成"
+                    }
                 } else {
                     translationState = "翻译完成，但结果为空"
                 }
             } catch (_: CancellationException) {
+                pendingTranslationCoordinator.requeueInFlight()
                 throw CancellationException()
             } catch (error: Throwable) {
                 if (!provisional) {
@@ -397,6 +425,9 @@ class SubtitleOverlayService : Service() {
                 translationState = "翻译失败：${error.message ?: error.javaClass.simpleName}"
             }
             renderPipeline()
+            pendingTranslationCoordinator.consumeReadyAfter(normalizedText)?.let { next ->
+                translateRecognizedText(next.text, next.provisional)
+            }
         }
     }
 
@@ -406,6 +437,12 @@ class SubtitleOverlayService : Service() {
         val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
         overlayView = inflater.inflate(R.layout.overlay_subtitle, null)
         subtitleText = overlayView?.findViewById(R.id.subtitleText)
+        detailsToggleButton = overlayView?.findViewById(R.id.detailsToggleButton)
+        detailsToggleButton?.setOnClickListener {
+            showOverlayDetails = !showOverlayDetails
+            hasAutoCollapsedAfterTranslatorReady = true
+            renderPipeline()
+        }
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -433,44 +470,83 @@ class SubtitleOverlayService : Service() {
     }
 
     private fun bindDragGesture() {
-        val view = overlayView ?: return
-        view.setOnTouchListener(object : View.OnTouchListener {
-            private var downX = 0f
-            private var downY = 0f
-            private var startX = 0
-            private var startY = 0
-            private var downAt = 0L
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val dragBounds = overlayView as? ViewGroup
 
-            override fun onTouch(v: View, event: MotionEvent): Boolean {
-                val params = overlayParams ?: return false
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        downX = event.rawX
-                        downY = event.rawY
-                        startX = params.x
-                        startY = params.y
-                        downAt = SystemClock.elapsedRealtime()
-                        return true
+        fun shouldTreatAsTapTarget(v: View): Boolean {
+            return v === detailsToggleButton
+        }
+
+        fun attachDragTouch(target: View) {
+            target.setOnTouchListener(object : View.OnTouchListener {
+                private var downX = 0f
+                private var downY = 0f
+                private var startX = 0
+                private var startY = 0
+                private var dragging = false
+
+                override fun onTouch(v: View, event: MotionEvent): Boolean {
+                    val params = overlayParams ?: return false
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downX = event.rawX
+                            downY = event.rawY
+                            startX = params.x
+                            startY = params.y
+                            dragging = false
+                            return true
+                        }
+
+                        MotionEvent.ACTION_MOVE -> {
+                            val deltaX = event.rawX - downX
+                            val deltaY = event.rawY - downY
+                            if (!dragging && (abs(deltaX) > touchSlop || abs(deltaY) > touchSlop)) {
+                                dragging = true
+                            }
+                            if (dragging) {
+                                params.x = startX + deltaX.toInt()
+                                params.y = startY + deltaY.toInt()
+                                windowManager?.updateViewLayout(overlayView, params)
+                            }
+                            return dragging
+                        }
+
+                        MotionEvent.ACTION_UP -> {
+                            val wasDragging = dragging
+                            dragging = false
+                            if (wasDragging) {
+                                return true
+                            }
+                            if (shouldTreatAsTapTarget(v)) {
+                                v.performClick()
+                                return true
+                            }
+                            return false
+                        }
+
+                        MotionEvent.ACTION_CANCEL -> {
+                            dragging = false
+                            return false
+                        }
                     }
-                    MotionEvent.ACTION_MOVE -> {
-                        params.x = startX + (event.rawX - downX).toInt()
-                        params.y = startY + (event.rawY - downY).toInt()
-                        windowManager?.updateViewLayout(overlayView, params)
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        val moved = abs(event.rawX - downX) > 8 || abs(event.rawY - downY) > 8
-                        val held = SystemClock.elapsedRealtime() - downAt
-                        return moved || held > 120
-                    }
+                    return false
                 }
-                return false
-            }
-        })
+            })
+        }
+
+        dragBounds?.let(::attachDragTouch)
+        subtitleText?.let(::attachDragTouch)
+        detailsToggleButton?.let(::attachDragTouch)
     }
 
     private fun renderPipeline(levelOverride: String? = null) {
-        val status = SubtitleOverlayFormatter.composePipeline(
+        if (!hasAutoCollapsedAfterTranslatorReady && OverlayUiModeDecider.shouldAutoCollapse(translationState, lastTranslatedText)) {
+            showOverlayDetails = false
+            hasAutoCollapsedAfterTranslatorReady = true
+        }
+        detailsToggleButton?.text = OverlayUiModeDecider.detailsToggleLabel(showOverlayDetails)
+        val effectiveLevelHint = levelOverride ?: lastLevelHint
+        val overlayStatus = SubtitleOverlayFormatter.composePipeline(
             modeLabel = inputModeLabel,
             captureState = captureState,
             modelState = modelState,
@@ -479,10 +555,23 @@ class SubtitleOverlayService : Service() {
             dumpState = dumpState,
             original = lastOriginalText,
             translated = lastTranslatedText,
-            levelHint = levelOverride ?: lastLevelHint
+            levelHint = effectiveLevelHint,
+            showDetails = showOverlayDetails
         )
-        subtitleText?.text = status
-        pushNotification(status)
+        val notificationStatus = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = inputModeLabel,
+            captureState = captureState,
+            modelState = modelState,
+            recognitionState = recognitionState,
+            translationState = translationState,
+            dumpState = dumpState,
+            original = lastOriginalText,
+            translated = lastTranslatedText,
+            levelHint = effectiveLevelHint,
+            showDetails = true
+        )
+        subtitleText?.text = overlayStatus
+        pushNotification(notificationStatus)
     }
 
     private fun buildNotification(status: String): Notification {
@@ -537,6 +626,8 @@ class SubtitleOverlayService : Service() {
         mediaProjection = null
         overlayView?.let { view -> windowManager?.removeView(view) }
         overlayView = null
+        subtitleText = null
+        detailsToggleButton = null
         overlayParams = null
         windowManager = null
         serviceScope.cancel()
