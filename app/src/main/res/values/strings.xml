@@ -1,5 +1,26 @@
 <resources>
-    <string name="app_name">实时翻译验证版</string>
+    <string name="app_name">灵译字幕</string>
     <string name="overlay_show_details">显示详情</string>
     <string name="overlay_hide_details">隐藏详情</string>
+    <string name="image_translation_title">拍照识图翻译</string>
+    <string name="image_translation_subtitle">支持拍照或从相册导入英文图片，自动识别并翻译成中文。</string>
+    <string name="main_title">灵译字幕</string>
+    <string name="main_subtitle">面向短视频与界面场景的实时字幕翻译工具，当前提供实时音频字幕翻译与拍照识图翻译两项能力。</string>
+    <string name="main_feature_live_title">实时字幕翻译</string>
+    <string name="main_feature_live_desc">捕获播放音频或麦克风输入，实时显示识别、翻译和音量链路状态。</string>
+    <string name="main_feature_image_title">拍照识图翻译</string>
+    <string name="main_feature_image_desc">对英文界面、文档、路牌和截图进行识别，并自动翻译成中文。</string>
+    <string name="main_action_overlay">打开悬浮窗权限设置</string>
+    <string name="main_action_start">启动实时字幕翻译</string>
+    <string name="main_action_image">打开拍照识图翻译</string>
+    <string name="main_action_stop">停止实时翻译服务</string>
+    <string name="main_status_label">当前状态</string>
+    <string name="image_action_take">拍照翻译（高清）</string>
+    <string name="image_action_gallery">从相册导入图片</string>
+    <string name="image_preview_label">图片预览</string>
+    <string name="image_preview_hint">拍照后会保留高清原图用于 OCR，小字识别效果更稳定。</string>
+    <string name="image_result_label">识别与翻译结果</string>
+    <string name="image_tips_label">使用建议</string>
+    <string name="image_tips_body">1. 优先拍摄清晰、平整、光线充足的英文内容。\n2. 相册导入更适合截图、海报、菜单和文档。\n3. 初次翻译时若提示模型准备中，请稍等几秒自动继续。</string>
+    <string name="content_desc_image_preview">待识别图片预览</string>
 </resources>

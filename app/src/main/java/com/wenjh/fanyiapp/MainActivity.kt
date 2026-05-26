@@ -55,16 +55,20 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         startButton = findViewById(R.id.startButton)
         val overlayButton = findViewById<Button>(R.id.overlayButton)
+        val imageTranslateButton = findViewById<Button>(R.id.imageTranslateButton)
         val stopButton = findViewById<Button>(R.id.stopButton)
 
         startButton.setOnClickListener { ensurePermissionsAndStart() }
         overlayButton.setOnClickListener { requestOverlayPermission() }
+        imageTranslateButton.setOnClickListener {
+            startActivity(Intent(this, ImageTranslationActivity::class.java))
+        }
         stopButton.setOnClickListener {
             stopService(Intent(this, SubtitleOverlayService::class.java))
             showStatus("服务已停止")
         }
 
-        showStatus("准备就绪：先授权悬浮窗，再点击开始。当前版本将优先尝试播放捕获+本地日语识别，失败时自动回退到麦克风本地识别。")
+        showStatus("准备就绪：先授权悬浮窗，再点击开始。当前版本支持两条能力：1）实时音频字幕翻译；2）拍照识图英文翻译中文。")
     }
 
     private fun ensurePermissionsAndStart() {
