@@ -68,4 +68,18 @@ class ImageTranslationFormatterTest {
             result
         )
     }
+
+    @Test
+    fun composeResult_showsGenericPlaceholderForOfflineTranslationStatus() {
+        val result = ImageTranslationFormatter.composeResult(
+            recognizedText = "Network error",
+            translatedText = "",
+            status = "正在进行内置离线翻译"
+        )
+
+        assertEquals(
+            "英文：Network error\n中文：（暂无翻译结果）\n状态：正在进行内置离线翻译",
+            result
+        )
+    }
 }

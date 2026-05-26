@@ -11,16 +11,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
-import com.google.mlkit.nl.translate.TranslateLanguage
-import com.google.mlkit.nl.translate.Translation
-import com.google.mlkit.nl.translate.Translator
-import com.google.mlkit.nl.translate.TranslatorOptions
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.File
@@ -35,15 +29,11 @@ class ImageTranslationActivity : AppCompatActivity() {
     private lateinit var choosePhotoButton: Button
 
     private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private var translator: Translator? = null
-    private var translatorReady = false
-    private var downloadTickerJob: Job? = null
-    private var translatorPreparationJob: Job? = null
     private var analyzeJob: Job? = null
 
     private var lastRecognizedText: String = ""
     private var lastTranslatedText: String = ""
-    private var currentStatus: String = "准备就绪：可拍照或从相册选择英文图片"
+    private var currentStatus: String = "准备就绪：可拍照或从相册选择英文图片（内置离线翻译）"
     private var currentPhotoUri: Uri? = null
     private var currentPhotoFilePath: String? = null
     private var lastPreviewUri: String? = null
@@ -98,7 +88,6 @@ class ImageTranslationActivity : AppCompatActivity() {
 
         showResult(status = currentStatus)
         restorePreviewIfPossible()
-        prepareTranslatorInBackground()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -112,11 +101,8 @@ class ImageTranslationActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        downloadTickerJob?.cancel()
-        translatorPreparationJob?.cancel()
         analyzeJob?.cancel()
         runCatching { textRecognizer.close() }
-        runCatching { translator?.close() }
         super.onDestroy()
     }
 
@@ -125,7 +111,7 @@ class ImageTranslationActivity : AppCompatActivity() {
         lastRecognizedText = savedInstanceState.getString(STATE_RECOGNIZED_TEXT).orEmpty()
         lastTranslatedText = savedInstanceState.getString(STATE_TRANSLATED_TEXT).orEmpty()
         currentStatus = savedInstanceState.getString(STATE_STATUS_TEXT).orEmpty()
-            .ifBlank { "准备就绪：可拍照或从相册选择英文图片" }
+            .ifBlank { "准备就绪：可拍照或从相册选择英文图片（内置离线翻译）" }
         currentPhotoUri = savedInstanceState.getString(STATE_CURRENT_PHOTO_URI)?.let(Uri::parse)
         currentPhotoFilePath = savedInstanceState.getString(STATE_CURRENT_PHOTO_PATH)
         lastPreviewUri = savedInstanceState.getString(STATE_LAST_PREVIEW_URI)
@@ -176,59 +162,6 @@ class ImageTranslationActivity : AppCompatActivity() {
         currentPhotoUri = null
     }
 
-    private fun prepareTranslatorInBackground() {
-        translatorReady = false
-        downloadTickerJob?.cancel()
-        translatorPreparationJob?.cancel()
-        currentStatus = "正在准备英语→中文翻译模型"
-        showResult(status = currentStatus)
-
-        val options = TranslatorOptions.Builder()
-            .setSourceLanguage(TranslateLanguage.ENGLISH)
-            .setTargetLanguage(TranslateLanguage.CHINESE)
-            .build()
-
-        runCatching { translator?.close() }
-        translator = Translation.getClient(options)
-        val currentTranslator = translator ?: return
-        val startedAt = SystemClock.elapsedRealtime()
-
-        fun buildDownloadState(): String {
-            val elapsedSeconds = ((SystemClock.elapsedRealtime() - startedAt) / 1000L).coerceAtLeast(0L)
-            return "下载中（已耗时 ${elapsedSeconds}s，进度：ML Kit 未提供百分比）"
-        }
-
-        translatorPreparationJob = lifecycleScope.launch {
-            downloadTickerJob = launch {
-                while (isActive && !translatorReady) {
-                    currentStatus = if ((SystemClock.elapsedRealtime() - startedAt) < 1200L) {
-                        "正在准备英语→中文翻译模型"
-                    } else {
-                        buildDownloadState()
-                    }
-                    showResult(status = currentStatus)
-                    delay(1000)
-                }
-            }
-
-            try {
-                currentTranslator.downloadModelIfNeeded().await()
-                translatorReady = true
-                currentStatus = "翻译模型就绪"
-                if (lastRecognizedText.isNotBlank()) {
-                    translateRecognizedText(lastRecognizedText, analyzeRequestToken)
-                }
-            } catch (error: Throwable) {
-                translatorReady = false
-                currentStatus = "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
-            } finally {
-                downloadTickerJob?.cancel()
-                downloadTickerJob = null
-                showResult(status = currentStatus)
-            }
-        }
-    }
-
     private fun analyzeUri(uri: Uri) {
         analyzeJob?.cancel()
         val requestToken = SystemClock.elapsedRealtime()
@@ -263,14 +196,6 @@ class ImageTranslationActivity : AppCompatActivity() {
             return
         }
 
-        lastRecognizedText = normalized
-        if (!translatorReady || translator == null) {
-            lastTranslatedText = ""
-            currentStatus = "翻译模型尚未就绪，识别结果已保留，模型准备好后将自动翻译"
-            showResult(status = currentStatus, clearTranslation = true)
-            return
-        }
-
         translateRecognizedText(normalized, requestToken)
     }
 
@@ -280,19 +205,24 @@ class ImageTranslationActivity : AppCompatActivity() {
         }
         lastRecognizedText = recognizedText
         lastTranslatedText = ""
-        currentStatus = "正在翻译识别结果"
+        currentStatus = "正在进行内置离线翻译"
         showResult(status = currentStatus, clearTranslation = true)
         try {
-            val translated = translator?.translate(recognizedText)?.await().orEmpty().trim()
+            val translatedResult = OfflineEnglishChineseTranslator.translate(recognizedText)
             if (analyzeRequestToken != requestToken) {
                 return
             }
-            lastTranslatedText = translated
-            currentStatus = if (translated.isNotBlank()) "翻译完成" else "翻译完成，但结果为空"
+            lastTranslatedText = translatedResult.text
+            currentStatus = when {
+                translatedResult.text.isBlank() -> "离线翻译完成，但结果为空"
+                translatedResult.usedBuiltinPhrase -> "离线翻译完成（内置短语）"
+                translatedResult.usedWordFallback -> "离线翻译完成（内置词典）"
+                else -> "离线翻译完成"
+            }
             showResult(status = currentStatus)
         } catch (error: Throwable) {
             lastTranslatedText = ""
-            currentStatus = "翻译失败：${error.message ?: error.javaClass.simpleName}"
+            currentStatus = "离线翻译失败：${error.message ?: error.javaClass.simpleName}"
             showResult(status = currentStatus, clearTranslation = true)
         }
     }
