@@ -34,4 +34,13 @@ class OfflineEnglishChineseTranslatorTest {
 
         assertEquals("", result.text)
     }
+
+    @Test
+    fun translate_doesNotClaimWordFallback_forUnknownEnglishText() {
+        val result = OfflineEnglishChineseTranslator.translate("Obscure wizard galaxy")
+
+        assertEquals("Obscure wizard galaxy", result.text)
+        assertTrue(!result.usedBuiltinPhrase)
+        assertTrue(!result.usedWordFallback)
+    }
 }

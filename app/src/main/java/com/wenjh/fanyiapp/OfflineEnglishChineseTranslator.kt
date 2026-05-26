@@ -9,6 +9,11 @@ object OfflineEnglishChineseTranslator {
         val usedWordFallback: Boolean
     )
 
+    private data class LineTranslation(
+        val text: String,
+        val matchedDictionary: Boolean
+    )
+
     private val phraseDictionary = linkedMapOf(
         "sign in with google" to "使用 Google 登录",
         "sign in" to "登录",
@@ -111,22 +116,25 @@ object OfflineEnglishChineseTranslator {
         }
 
         val translatedLines = normalizedInput.lines().map { translateLine(it) }
-        val merged = translatedLines.joinToString("\n").trim()
+        val merged = translatedLines.joinToString("\n") { it.text }.trim()
         return Result(
             text = merged,
             usedBuiltinPhrase = false,
-            usedWordFallback = merged.isNotBlank()
+            usedWordFallback = translatedLines.any { it.matchedDictionary }
         )
     }
 
-    private fun translateLine(line: String): String {
+    private fun translateLine(line: String): LineTranslation {
         val trimmed = line.trim()
-        if (trimmed.isBlank()) return ""
+        if (trimmed.isBlank()) return LineTranslation(text = "", matchedDictionary = false)
 
-        phraseDictionary[trimmed.lowercase(Locale.US)]?.let { return it }
+        phraseDictionary[trimmed.lowercase(Locale.US)]?.let {
+            return LineTranslation(text = it, matchedDictionary = true)
+        }
 
         val tokens = tokenRegex.findAll(trimmed).map { it.value }.toList()
         val output = mutableListOf<String>()
+        var matchedDictionary = false
         var index = 0
         while (index < tokens.size) {
             val token = tokens[index]
@@ -136,14 +144,20 @@ object OfflineEnglishChineseTranslator {
                 output += "第"
                 output += tokens[index + 1]
                 output += "集"
+                matchedDictionary = true
                 index += 2
                 continue
             }
 
             val mapped = wordDictionary[lower]
             when {
-                mapped != null && mapped.isNotBlank() -> output += mapped
-                mapped == "" -> Unit
+                mapped != null && mapped.isNotBlank() -> {
+                    output += mapped
+                    matchedDictionary = true
+                }
+                mapped == "" -> {
+                    matchedDictionary = true
+                }
                 token.all(Char::isDigit) -> output += token
                 token.length == 1 && !token[0].isLetterOrDigit() -> output += token
                 else -> output += token
@@ -151,7 +165,7 @@ object OfflineEnglishChineseTranslator {
             index += 1
         }
 
-        return output.joinToString(" ")
+        val text = output.joinToString(" ")
             .replace(" ,", ",")
             .replace(" .", ".")
             .replace(" !", "!")
@@ -162,5 +176,6 @@ object OfflineEnglishChineseTranslator {
             .replace(" )", ")")
             .replace(Regex("\\s+"), " ")
             .trim()
+        return LineTranslation(text = text, matchedDictionary = matchedDictionary)
     }
 }
