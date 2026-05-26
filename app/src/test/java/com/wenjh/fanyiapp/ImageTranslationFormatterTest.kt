@@ -82,4 +82,18 @@ class ImageTranslationFormatterTest {
             result
         )
     }
+
+    @Test
+    fun composeResult_doesNotTreatReadyStatusAsModelPreparing() {
+        val result = ImageTranslationFormatter.composeResult(
+            recognizedText = "",
+            translatedText = "",
+            status = "准备就绪：可拍照或从相册选择英文图片（内置离线翻译）"
+        )
+
+        assertEquals(
+            "英文：（未识别到英文）\n中文：（暂无翻译结果）\n状态：准备就绪：可拍照或从相册选择英文图片（内置离线翻译）",
+            result
+        )
+    }
 }

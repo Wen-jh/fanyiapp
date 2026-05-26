@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Button
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,15 +26,21 @@ import java.util.Locale
 class ImageTranslationActivity : AppCompatActivity() {
     private lateinit var previewImage: ImageView
     private lateinit var resultText: TextView
+    private lateinit var modelStatusText: TextView
+    private lateinit var modelProgressBar: ProgressBar
+    private lateinit var retryModelInitButton: Button
     private lateinit var takePhotoButton: Button
     private lateinit var choosePhotoButton: Button
+    private lateinit var translationEngine: PhotoTranslationEngine
 
     private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private var analyzeJob: Job? = null
 
     private var lastRecognizedText: String = ""
     private var lastTranslatedText: String = ""
-    private var currentStatus: String = "准备就绪：可拍照或从相册选择英文图片（内置离线翻译）"
+    private var currentStatus: String = "准备就绪：可拍照或从相册选择英文图片（Hy-MT 离线模型）"
+    private var currentModelStatus: String = "模型状态：等待初始化"
+    private var currentModelProgress: Int? = null
     private var currentPhotoUri: Uri? = null
     private var currentPhotoFilePath: String? = null
     private var lastPreviewUri: String? = null
@@ -74,8 +81,12 @@ class ImageTranslationActivity : AppCompatActivity() {
 
         previewImage = findViewById(R.id.previewImage)
         resultText = findViewById(R.id.resultText)
+        modelStatusText = findViewById(R.id.modelStatusText)
+        modelProgressBar = findViewById(R.id.modelProgressBar)
+        retryModelInitButton = findViewById(R.id.retryModelInitButton)
         takePhotoButton = findViewById(R.id.takePhotoButton)
         choosePhotoButton = findViewById(R.id.choosePhotoButton)
+        translationEngine = HyMtTranslationEngine(applicationContext)
 
         restoreState(savedInstanceState)
 
@@ -85,9 +96,14 @@ class ImageTranslationActivity : AppCompatActivity() {
         choosePhotoButton.setOnClickListener {
             pickImageLauncher.launch("image/*")
         }
+        retryModelInitButton.setOnClickListener {
+            prepareTranslationEngine(forceToast = true)
+        }
 
         showResult(status = currentStatus)
+        renderModelState(currentModelStatus, currentModelProgress)
         restorePreviewIfPossible()
+        prepareTranslationEngine()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -95,6 +111,8 @@ class ImageTranslationActivity : AppCompatActivity() {
         outState.putString(STATE_RECOGNIZED_TEXT, lastRecognizedText)
         outState.putString(STATE_TRANSLATED_TEXT, lastTranslatedText)
         outState.putString(STATE_STATUS_TEXT, currentStatus)
+        outState.putString(STATE_MODEL_STATUS_TEXT, currentModelStatus)
+        outState.putInt(STATE_MODEL_PROGRESS, currentModelProgress ?: -1)
         outState.putString(STATE_CURRENT_PHOTO_URI, currentPhotoUri?.toString())
         outState.putString(STATE_CURRENT_PHOTO_PATH, currentPhotoFilePath)
         outState.putString(STATE_LAST_PREVIEW_URI, lastPreviewUri)
@@ -102,6 +120,7 @@ class ImageTranslationActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         analyzeJob?.cancel()
+        translationEngine.release()
         runCatching { textRecognizer.close() }
         super.onDestroy()
     }
@@ -111,7 +130,11 @@ class ImageTranslationActivity : AppCompatActivity() {
         lastRecognizedText = savedInstanceState.getString(STATE_RECOGNIZED_TEXT).orEmpty()
         lastTranslatedText = savedInstanceState.getString(STATE_TRANSLATED_TEXT).orEmpty()
         currentStatus = savedInstanceState.getString(STATE_STATUS_TEXT).orEmpty()
-            .ifBlank { "准备就绪：可拍照或从相册选择英文图片（内置离线翻译）" }
+            .ifBlank { "准备就绪：可拍照或从相册选择英文图片（Hy-MT 离线模型）" }
+        currentModelStatus = savedInstanceState.getString(STATE_MODEL_STATUS_TEXT).orEmpty()
+            .ifBlank { "模型状态：等待初始化" }
+        currentModelProgress = savedInstanceState.getInt(STATE_MODEL_PROGRESS, -1)
+            .takeIf { it >= 0 }
         currentPhotoUri = savedInstanceState.getString(STATE_CURRENT_PHOTO_URI)?.let(Uri::parse)
         currentPhotoFilePath = savedInstanceState.getString(STATE_CURRENT_PHOTO_PATH)
         lastPreviewUri = savedInstanceState.getString(STATE_LAST_PREVIEW_URI)
@@ -168,6 +191,13 @@ class ImageTranslationActivity : AppCompatActivity() {
         analyzeRequestToken = requestToken
         analyzeJob = lifecycleScope.launch {
             runCatching {
+                val engineState = translationEngine.currentState()
+                if (engineState !is EngineState.Ready) {
+                    currentStatus = "Hy-MT 模型尚未就绪，请稍候"
+                    showResult(status = currentStatus, clearTranslation = true)
+                    prepareTranslationEngine(forceToast = true)
+                    return@launch
+                }
                 currentStatus = "正在识别图片中的英文"
                 showResult(status = currentStatus, clearTranslation = true)
                 val image = InputImage.fromFilePath(this@ImageTranslationActivity, uri)
@@ -205,26 +235,66 @@ class ImageTranslationActivity : AppCompatActivity() {
         }
         lastRecognizedText = recognizedText
         lastTranslatedText = ""
-        currentStatus = "正在进行内置离线翻译"
+        currentStatus = "正在进行 Hy-MT 离线翻译"
         showResult(status = currentStatus, clearTranslation = true)
         try {
-            val translatedResult = OfflineEnglishChineseTranslator.translate(recognizedText)
+            val translatedResult = translationEngine.translate(recognizedText)
             if (analyzeRequestToken != requestToken) {
                 return
             }
             lastTranslatedText = translatedResult.text
             currentStatus = when {
-                translatedResult.text.isBlank() -> "离线翻译完成，但结果为空"
-                translatedResult.usedBuiltinPhrase -> "离线翻译完成（内置短语）"
-                translatedResult.usedWordFallback -> "离线翻译完成（内置词典）"
-                else -> "离线翻译完成"
+                translatedResult.text.isBlank() -> "Hy-MT 离线翻译完成，但结果为空"
+                translatedResult.backend == "builtin-fallback" -> "Hy-MT 未接通，当前显示内置词典结果"
+                else -> "Hy-MT 离线翻译完成"
             }
             showResult(status = currentStatus)
         } catch (error: Throwable) {
             lastTranslatedText = ""
-            currentStatus = "离线翻译失败：${error.message ?: error.javaClass.simpleName}"
+            currentStatus = "Hy-MT 离线翻译失败：${error.message ?: error.javaClass.simpleName}"
             showResult(status = currentStatus, clearTranslation = true)
         }
+    }
+
+    private fun prepareTranslationEngine(forceToast: Boolean = false) {
+        lifecycleScope.launch {
+            currentModelStatus = "模型状态：正在检查 Hy-MT 离线模型"
+            currentModelProgress = null
+            renderModelState(currentModelStatus, currentModelProgress)
+            val result = runCatching {
+                translationEngine.prepareIfNeeded { progress ->
+                    currentModelStatus = "模型状态：${progress.message}"
+                    currentModelProgress = progress.percent
+                    runOnUiThread {
+                        renderModelState(currentModelStatus, currentModelProgress)
+                    }
+                }
+            }.getOrElse { error ->
+                PreparationResult(false, "Hy-MT 初始化失败：${error.message ?: error.javaClass.simpleName}")
+            }
+
+            currentModelStatus = if (result.ready) {
+                "模型状态：Hy-MT 离线模型已就绪"
+            } else {
+                "模型状态：${result.message}"
+            }
+            currentModelProgress = if (result.ready) 100 else currentModelProgress
+            renderModelState(currentModelStatus, currentModelProgress)
+            if (forceToast || !result.ready) {
+                Toast.makeText(this@ImageTranslationActivity, currentModelStatus, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun renderModelState(status: String, progress: Int?) {
+        modelStatusText.text = status
+        if (progress == null) {
+            modelProgressBar.isIndeterminate = true
+        } else {
+            modelProgressBar.isIndeterminate = false
+            modelProgressBar.progress = progress.coerceIn(0, 100)
+        }
+        retryModelInitButton.isEnabled = true
     }
 
     private fun showResult(
@@ -250,6 +320,8 @@ class ImageTranslationActivity : AppCompatActivity() {
         private const val STATE_RECOGNIZED_TEXT = "state_recognized_text"
         private const val STATE_TRANSLATED_TEXT = "state_translated_text"
         private const val STATE_STATUS_TEXT = "state_status_text"
+        private const val STATE_MODEL_STATUS_TEXT = "state_model_status_text"
+        private const val STATE_MODEL_PROGRESS = "state_model_progress"
         private const val STATE_CURRENT_PHOTO_URI = "state_current_photo_uri"
         private const val STATE_CURRENT_PHOTO_PATH = "state_current_photo_path"
         private const val STATE_LAST_PREVIEW_URI = "state_last_preview_uri"

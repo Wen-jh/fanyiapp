@@ -8,3 +8,4 @@ captures/
 .externalNativeBuild/
 .cxx/
 _artifacts/
+app/src/main/assets/hy_mt/*.gguf

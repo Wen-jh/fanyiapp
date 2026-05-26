@@ -43,6 +43,14 @@ jobs:
           unzip -q /tmp/gradle-8.7-bin.zip -d /tmp
           echo "/tmp/gradle-8.7/bin" >> $GITHUB_PATH
 
+      - name: Download Hy-MT model asset
+        run: |
+          mkdir -p app/src/main/assets/hy_mt
+          curl -L --fail --retry 3 --max-time 7200 \
+            -o app/src/main/assets/hy_mt/Hy-MT1.5-1.8B-1.25bit.gguf \
+            'https://modelscope.cn/models/AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF/resolve/master/Hy-MT1.5-1.8B-1.25bit.gguf'
+          stat -c '%n %s bytes' app/src/main/assets/hy_mt/Hy-MT1.5-1.8B-1.25bit.gguf
+
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.7
 

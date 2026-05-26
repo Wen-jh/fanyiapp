@@ -20,6 +20,9 @@ android {
         }
         buildConfigField("boolean", "DEFAULT_AUDIO_DUMP_ENABLED", "false")
         buildConfigField("boolean", "DEFAULT_AUDIO_DUMP_WAV", "true")
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -54,6 +57,7 @@ android {
             useLegacyPackaging = true
         }
         resources {
+            noCompress += setOf("gguf", "bin", "model", "txt")
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
