@@ -57,9 +57,12 @@ android {
             useLegacyPackaging = true
         }
         resources {
-            noCompress += setOf("gguf", "bin", "model", "txt")
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    androidResources {
+        noCompress += listOf("gguf", "bin", "model", "txt")
     }
 }
 
