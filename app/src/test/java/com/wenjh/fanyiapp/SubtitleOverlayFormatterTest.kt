@@ -270,4 +270,46 @@ class SubtitleOverlayFormatterTest {
         assertTrue(result.contains("模型：本地日语识别模型就绪"))
         assertTrue(result.contains("调试：等待写入器初始化"))
     }
+
+    @Test
+    fun composePipeline_supportsDynamicSourceAndTargetLabels() {
+        val result = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = "播放捕获+本地识别",
+            captureState = "播放音频捕获中",
+            modelState = "Hy-MT 离线翻译模型就绪",
+            recognitionState = "本地识别完成",
+            translationState = "Hy-MT 离线翻译完成（Japanese → English）",
+            dumpState = "未启用",
+            original = "ありがとう",
+            translated = "Thank you",
+            levelHint = "音量: 18%",
+            originalLabel = "日语",
+            translatedLabel = "英语"
+        )
+
+        assertTrue(result.contains("日语：ありがとう"))
+        assertTrue(result.contains("英语：Thank you"))
+        assertFalse(result.contains("中文：Thank you"))
+    }
+
+    @Test
+    fun composePipeline_usesDynamicTargetPlaceholderWhenTranslationMissing() {
+        val result = SubtitleOverlayFormatter.composePipeline(
+            modeLabel = "播放捕获+本地识别",
+            captureState = "播放音频捕获中",
+            modelState = "Hy-MT 离线翻译模型就绪",
+            recognitionState = "本地识别中（实时）",
+            translationState = "等待稳定分段后再翻译",
+            dumpState = "未启用",
+            original = "こんにちは",
+            translated = "",
+            levelHint = "音量: 13%",
+            originalLabel = "日语",
+            translatedLabel = "韩语"
+        )
+
+        assertTrue(result.contains("日语：こんにちは"))
+        assertTrue(result.contains("韩语：（等待更稳定语句后翻译）"))
+        assertFalse(result.contains("中文：（等待更稳定语句后翻译）"))
+    }
 }

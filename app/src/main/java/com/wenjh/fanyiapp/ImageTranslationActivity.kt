@@ -226,8 +226,8 @@ class ImageTranslationActivity : AppCompatActivity() {
     }
 
     private fun updateLanguageLabels() {
-        recognizedLabelTextView.text = "识别出的原文（${selectedSourceLanguage().promptName}）"
-        translatedLabelTextView.text = "翻译结果（${selectedTargetLanguage().promptName}）"
+        recognizedLabelTextView.text = "识别出的原文（${selectedSourceLanguage().uiLabel}）"
+        translatedLabelTextView.text = "翻译结果（${selectedTargetLanguage().uiLabel}）"
     }
 
     private fun selectedSourceLanguage(): HyMtLanguageSupport.LanguageOption {
@@ -244,7 +244,7 @@ class ImageTranslationActivity : AppCompatActivity() {
     }
 
     private fun defaultReadyStatus(): String {
-        return "准备就绪：可拍照或从相册选择图片（${selectedSourceLanguage().promptName} → ${selectedTargetLanguage().promptName}）"
+        return "准备就绪：可拍照或从相册选择图片（${selectedSourceLanguage().uiLabel} → ${selectedTargetLanguage().uiLabel}）"
     }
 
     private fun launchHighResolutionCamera() {

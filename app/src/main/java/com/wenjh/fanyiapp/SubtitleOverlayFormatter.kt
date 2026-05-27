@@ -12,15 +12,17 @@ object SubtitleOverlayFormatter {
         modeLabel: String,
         original: String,
         translated: String,
-        status: String
+        status: String,
+        originalLabel: String = "日语",
+        translatedLabel: String = "中文"
     ): String {
-        val safeOriginal = original.ifBlank { "（未识别到日语）" }
+        val safeOriginal = original.ifBlank { "（未识别到${originalLabel}）" }
         val safeTranslated = translated.ifBlank { status.ifBlank { "翻译中…" } }
         val safeStatus = status.ifBlank { "等待中" }
         return listOf(
             "模式：$modeLabel",
-            "日语：$safeOriginal",
-            "中文：$safeTranslated",
+            "${originalLabel}：$safeOriginal",
+            "${translatedLabel}：$safeTranslated",
             "状态：$safeStatus"
         ).joinToString("\n")
     }
@@ -35,9 +37,11 @@ object SubtitleOverlayFormatter {
         original: String,
         translated: String,
         levelHint: String,
-        showDetails: Boolean = true
+        showDetails: Boolean = true,
+        originalLabel: String = "日语",
+        translatedLabel: String = "中文"
     ): String {
-        val safeOriginal = original.ifBlank { "（未识别到日语）" }
+        val safeOriginal = original.ifBlank { "（未识别到${originalLabel}）" }
         val safeTranslated = translated.ifBlank {
             when {
                 translationState.contains("先显示原文") -> "（翻译尚未就绪，当前先显示原文）"
@@ -51,8 +55,8 @@ object SubtitleOverlayFormatter {
 
         if (!showDetails) {
             return listOf(
-                "日语：$safeOriginal",
-                "中文：$safeTranslated"
+                "${originalLabel}：$safeOriginal",
+                "${translatedLabel}：$safeTranslated"
             ).joinToString("\n")
         }
 
@@ -65,8 +69,8 @@ object SubtitleOverlayFormatter {
             "翻译：${translationState.ifBlank { "未开始" }}",
             "调试：${dumpState.ifBlank { "未启用" }}",
             safeLevelHint,
-            "日语：$safeOriginal",
-            "中文：$safeTranslated"
+            "${originalLabel}：$safeOriginal",
+            "${translatedLabel}：$safeTranslated"
         ).joinToString("\n")
     }
 }

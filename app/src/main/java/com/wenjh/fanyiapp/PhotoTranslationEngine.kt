@@ -26,7 +26,8 @@ data class PreparationResult(
 data class TranslationResult(
     val text: String,
     val backend: String,
-    val rawOutput: String? = null
+    val rawOutput: String? = null,
+    val statusMessage: String? = null
 )
 
 sealed class EngineState {
