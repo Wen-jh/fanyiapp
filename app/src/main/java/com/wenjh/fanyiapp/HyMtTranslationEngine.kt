@@ -41,13 +41,17 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
         }
     }
 
-    override suspend fun translate(text: String): TranslationResult = inferenceMutex.withLock {
-        state = EngineState.Translating("正在进行 Hy-MT 离线翻译")
+    override suspend fun translate(text: String, sourceLanguage: String, targetLanguage: String): TranslationResult = inferenceMutex.withLock {
+        state = EngineState.Translating("正在进行 Hy-MT 离线翻译（${sourceLanguage} → ${targetLanguage}）")
         if (!HyMtNativeBridge.isReady()) {
             error("Hy-MT native 推理尚未就绪")
         }
 
-        val prompt = HyMtPromptBuilder.build(text)
+        val prompt = HyMtPromptBuilder.build(
+            recognizedText = text,
+            sourceLanguage = sourceLanguage,
+            targetLanguage = targetLanguage
+        )
         val rawOutput = withContext(Dispatchers.Default) {
             HyMtNativeBridge.translate(prompt, maxTokens = 256, temperature = 0.2f)
         }

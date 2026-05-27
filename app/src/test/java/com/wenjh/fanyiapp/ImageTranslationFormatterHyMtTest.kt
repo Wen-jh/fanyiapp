@@ -13,7 +13,7 @@ class ImageTranslationFormatterHyMtTest {
         )
 
         assertEquals(
-            "英文：（未识别到英文）\n中文：（翻译模型准备中）\n状态：正在解包 Hy-MT 离线模型（42%）",
+            "原文：（未识别到原文）\n译文：（翻译模型准备中）\n状态：正在解包 Hy-MT 离线模型（42%）",
             result
         )
     }
@@ -27,7 +27,7 @@ class ImageTranslationFormatterHyMtTest {
         )
 
         assertEquals(
-            "英文：Open settings\n中文：（暂无翻译结果）\n状态：正在进行 Hy-MT 离线翻译",
+            "原文：Open settings\n译文：（暂无翻译结果）\n状态：正在进行 Hy-MT 离线翻译",
             result
         )
     }

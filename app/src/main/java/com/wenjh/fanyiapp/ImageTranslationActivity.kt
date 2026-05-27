@@ -4,9 +4,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.ProgressBar
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +30,8 @@ import java.util.Locale
 
 class ImageTranslationActivity : AppCompatActivity() {
     private lateinit var previewImage: ImageView
+    private lateinit var recognizedLabelTextView: TextView
+    private lateinit var translatedLabelTextView: TextView
     private lateinit var recognizedTextView: TextView
     private lateinit var translatedTextView: TextView
     private lateinit var resultStatusTextView: TextView
@@ -34,14 +40,20 @@ class ImageTranslationActivity : AppCompatActivity() {
     private lateinit var retryModelInitButton: Button
     private lateinit var takePhotoButton: Button
     private lateinit var choosePhotoButton: Button
+    private lateinit var sourceLanguageSpinner: Spinner
+    private lateinit var targetLanguageSpinner: Spinner
     private lateinit var translationEngine: PhotoTranslationEngine
 
     private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private var analyzeJob: Job? = null
+    private val languageOptions = HyMtLanguageSupport.supportedLanguages
+    private var suppressLanguageSelectionCallback = false
 
     private var lastRecognizedText: String = ""
     private var lastTranslatedText: String = ""
-    private var currentStatus: String = "准备就绪：可拍照或从相册选择英文图片（Hy-MT 离线模型）"
+    private var selectedSourceLanguageCode: String = HyMtLanguageSupport.defaultSource.code
+    private var selectedTargetLanguageCode: String = HyMtLanguageSupport.defaultTarget.code
+    private var currentStatus: String = defaultReadyStatus()
     private var currentModelStatus: String = "模型状态：等待初始化"
     private var currentModelProgress: Int? = null
     private var currentPhotoUri: Uri? = null
@@ -89,6 +101,8 @@ class ImageTranslationActivity : AppCompatActivity() {
         setContentView(R.layout.activity_image_translation)
 
         previewImage = findViewById(R.id.previewImage)
+        recognizedLabelTextView = findViewById(R.id.recognizedLabelText)
+        translatedLabelTextView = findViewById(R.id.translatedLabelText)
         recognizedTextView = findViewById(R.id.recognizedText)
         translatedTextView = findViewById(R.id.translatedText)
         resultStatusTextView = findViewById(R.id.resultStatusText)
@@ -97,9 +111,13 @@ class ImageTranslationActivity : AppCompatActivity() {
         retryModelInitButton = findViewById(R.id.retryModelInitButton)
         takePhotoButton = findViewById(R.id.takePhotoButton)
         choosePhotoButton = findViewById(R.id.choosePhotoButton)
+        sourceLanguageSpinner = findViewById(R.id.sourceLanguageSpinner)
+        targetLanguageSpinner = findViewById(R.id.targetLanguageSpinner)
         translationEngine = HyMtTranslationEngine(applicationContext)
 
         restoreState(savedInstanceState)
+        setupLanguageSpinners()
+        updateLanguageLabels()
 
         takePhotoButton.setOnClickListener {
             launchHighResolutionCamera()
@@ -127,6 +145,8 @@ class ImageTranslationActivity : AppCompatActivity() {
         outState.putString(STATE_CURRENT_PHOTO_URI, currentPhotoUri?.toString())
         outState.putString(STATE_CURRENT_PHOTO_PATH, currentPhotoFilePath)
         outState.putString(STATE_LAST_PREVIEW_URI, lastPreviewUri)
+        outState.putString(STATE_SOURCE_LANGUAGE_CODE, selectedSourceLanguageCode)
+        outState.putString(STATE_TARGET_LANGUAGE_CODE, selectedTargetLanguageCode)
     }
 
     override fun onDestroy() {
@@ -140,8 +160,12 @@ class ImageTranslationActivity : AppCompatActivity() {
         if (savedInstanceState == null) return
         lastRecognizedText = savedInstanceState.getString(STATE_RECOGNIZED_TEXT).orEmpty()
         lastTranslatedText = savedInstanceState.getString(STATE_TRANSLATED_TEXT).orEmpty()
+        selectedSourceLanguageCode = savedInstanceState.getString(STATE_SOURCE_LANGUAGE_CODE).orEmpty()
+            .ifBlank { HyMtLanguageSupport.defaultSource.code }
+        selectedTargetLanguageCode = savedInstanceState.getString(STATE_TARGET_LANGUAGE_CODE).orEmpty()
+            .ifBlank { HyMtLanguageSupport.defaultTarget.code }
         currentStatus = savedInstanceState.getString(STATE_STATUS_TEXT).orEmpty()
-            .ifBlank { "准备就绪：可拍照或从相册选择英文图片（Hy-MT 离线模型）" }
+            .ifBlank { defaultReadyStatus() }
         currentModelStatus = savedInstanceState.getString(STATE_MODEL_STATUS_TEXT).orEmpty()
             .ifBlank { "模型状态：等待初始化" }
         currentModelProgress = savedInstanceState.getInt(STATE_MODEL_PROGRESS, -1)
@@ -156,6 +180,71 @@ class ImageTranslationActivity : AppCompatActivity() {
         runCatching {
             previewImage.setImageURI(previewUri)
         }
+    }
+
+    private fun setupLanguageSpinners() {
+        val adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            languageOptions.map { it.displayName }
+        ).also {
+            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        sourceLanguageSpinner.adapter = adapter
+        targetLanguageSpinner.adapter = adapter
+
+        suppressLanguageSelectionCallback = true
+        sourceLanguageSpinner.setSelection(indexOfLanguage(selectedSourceLanguageCode), false)
+        targetLanguageSpinner.setSelection(indexOfLanguage(selectedTargetLanguageCode), false)
+        suppressLanguageSelectionCallback = false
+
+        sourceLanguageSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (suppressLanguageSelectionCallback) return
+                selectedSourceLanguageCode = languageOptions[position].code
+                onLanguageSelectionChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+        targetLanguageSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (suppressLanguageSelectionCallback) return
+                selectedTargetLanguageCode = languageOptions[position].code
+                onLanguageSelectionChanged()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+    }
+
+    private fun onLanguageSelectionChanged() {
+        updateLanguageLabels()
+        lastTranslatedText = ""
+        currentStatus = "已切换翻译方向：${selectedSourceLanguage().promptName} → ${selectedTargetLanguage().promptName}"
+        showResult(status = currentStatus)
+    }
+
+    private fun updateLanguageLabels() {
+        recognizedLabelTextView.text = "识别出的原文（${selectedSourceLanguage().promptName}）"
+        translatedLabelTextView.text = "翻译结果（${selectedTargetLanguage().promptName}）"
+    }
+
+    private fun selectedSourceLanguage(): HyMtLanguageSupport.LanguageOption {
+        return HyMtLanguageSupport.findByCode(selectedSourceLanguageCode) ?: HyMtLanguageSupport.defaultSource
+    }
+
+    private fun selectedTargetLanguage(): HyMtLanguageSupport.LanguageOption {
+        return HyMtLanguageSupport.findByCode(selectedTargetLanguageCode) ?: HyMtLanguageSupport.defaultTarget
+    }
+
+    private fun indexOfLanguage(code: String): Int {
+        val index = languageOptions.indexOfFirst { it.code == code }
+        return if (index >= 0) index else 0
+    }
+
+    private fun defaultReadyStatus(): String {
+        return "准备就绪：可拍照或从相册选择图片（${selectedSourceLanguage().promptName} → ${selectedTargetLanguage().promptName}）"
     }
 
     private fun launchHighResolutionCamera() {
@@ -209,7 +298,7 @@ class ImageTranslationActivity : AppCompatActivity() {
                     prepareTranslationEngine(forceToast = true)
                     return@launch
                 }
-                currentStatus = "正在识别图片中的英文"
+                currentStatus = "正在识别图片中的文字"
                 showResult(status = currentStatus, clearTranslation = true)
                 val image = InputImage.fromFilePath(this@ImageTranslationActivity, uri)
                 val recognized = textRecognizer.process(image).await().text
@@ -232,7 +321,7 @@ class ImageTranslationActivity : AppCompatActivity() {
         if (normalized.isBlank()) {
             lastRecognizedText = ""
             lastTranslatedText = ""
-            currentStatus = "未识别到英文，请拍清晰一点的英文内容"
+            currentStatus = "未识别到文字，请拍清晰一点的内容"
             showResult(status = currentStatus, clearTranslation = true)
             return
         }
@@ -246,18 +335,22 @@ class ImageTranslationActivity : AppCompatActivity() {
         }
         lastRecognizedText = recognizedText
         lastTranslatedText = ""
-        currentStatus = "正在进行 Hy-MT 离线翻译"
+        currentStatus = "正在进行 Hy-MT 离线翻译（${selectedSourceLanguage().promptName} → ${selectedTargetLanguage().promptName}）"
         showResult(status = currentStatus, clearTranslation = true)
         try {
-            val translatedResult = translationEngine.translate(recognizedText)
+            val translatedResult = translationEngine.translate(
+                text = recognizedText,
+                sourceLanguage = selectedSourceLanguage().promptName,
+                targetLanguage = selectedTargetLanguage().promptName
+            )
             if (analyzeRequestToken != requestToken) {
                 return
             }
             lastTranslatedText = translatedResult.text
             currentStatus = when {
-                translatedResult.text.isBlank() -> "Hy-MT 离线翻译完成，但结果为空"
-                translatedResult.backend == "builtin-fallback" -> "Hy-MT 未接通，当前显示内置词典结果"
-                else -> "Hy-MT 离线翻译完成"
+                translatedResult.text.isBlank() -> "Hy-MT 离线翻译完成，但结果为空（${selectedSourceLanguage().promptName} → ${selectedTargetLanguage().promptName}）"
+                translatedResult.backend == "builtin-fallback" -> "Hy-MT 未接通，当前显示内置词典结果（${selectedSourceLanguage().promptName} → ${selectedTargetLanguage().promptName}）"
+                else -> "Hy-MT 离线翻译完成（${selectedSourceLanguage().promptName} → ${selectedTargetLanguage().promptName}）"
             }
             showResult(status = currentStatus)
         } catch (error: Throwable) {
@@ -317,6 +410,7 @@ class ImageTranslationActivity : AppCompatActivity() {
         if (clearTranslation) {
             lastTranslatedText = ""
         }
+        updateLanguageLabels()
         val uiContent = ImageTranslationFormatter.buildUiContent(
             recognizedText = lastRecognizedText,
             translatedText = lastTranslatedText,
@@ -339,5 +433,7 @@ class ImageTranslationActivity : AppCompatActivity() {
         private const val STATE_CURRENT_PHOTO_URI = "state_current_photo_uri"
         private const val STATE_CURRENT_PHOTO_PATH = "state_current_photo_path"
         private const val STATE_LAST_PREVIEW_URI = "state_last_preview_uri"
+        private const val STATE_SOURCE_LANGUAGE_CODE = "state_source_language_code"
+        private const val STATE_TARGET_LANGUAGE_CODE = "state_target_language_code"
     }
 }

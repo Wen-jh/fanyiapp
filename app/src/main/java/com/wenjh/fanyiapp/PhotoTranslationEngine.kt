@@ -2,7 +2,7 @@ package com.wenjh.fanyiapp
 
 interface PhotoTranslationEngine {
     suspend fun prepareIfNeeded(onProgress: ((PreparationProgress) -> Unit)? = null): PreparationResult
-    suspend fun translate(text: String): TranslationResult
+    suspend fun translate(text: String, sourceLanguage: String, targetLanguage: String): TranslationResult
     fun currentState(): EngineState
     fun release()
 }

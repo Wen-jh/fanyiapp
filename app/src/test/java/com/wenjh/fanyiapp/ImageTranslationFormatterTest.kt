@@ -5,94 +5,39 @@ import org.junit.Test
 
 class ImageTranslationFormatterTest {
     @Test
-    fun normalizeRecognizedText_collapsesBlankLinesAndTrimsWhitespace() {
-        val result = ImageTranslationFormatter.normalizeRecognizedText(
-            "  Hello world  \n\n This is a test. \n   \n OCR line 3  "
+    fun buildUiContent_usesGenericPlaceholdersForEmptyState() {
+        val content = ImageTranslationFormatter.buildUiContent(
+            recognizedText = "",
+            translatedText = "",
+            status = ""
         )
 
-        assertEquals("Hello world\nThis is a test.\nOCR line 3", result)
+        assertEquals("（未识别到原文）", content.recognizedText)
+        assertEquals("（暂无翻译结果）", content.translatedText)
+        assertEquals("等待中", content.statusText)
     }
 
     @Test
-    fun composeResult_showsRecognizedEnglishAndTranslatedChinese() {
+    fun buildUiContent_showsRecognitionWaitingPlaceholderWithoutEnglishSpecificText() {
+        val content = ImageTranslationFormatter.buildUiContent(
+            recognizedText = "",
+            translatedText = "",
+            status = "正在识别图片中的文字"
+        )
+
+        assertEquals("（等待识别原文）", content.translatedText)
+    }
+
+    @Test
+    fun composeResult_usesNeutralLabels() {
         val result = ImageTranslationFormatter.composeResult(
-            recognizedText = "Open settings",
+            recognizedText = "設定を開く",
             translatedText = "打开设置",
-            status = "翻译完成"
+            status = "Hy-MT 离线翻译完成"
         )
 
         assertEquals(
-            "英文：Open settings\n中文：打开设置\n状态：翻译完成",
-            result
-        )
-    }
-
-    @Test
-    fun composeResult_showsPreparingHintWhenTranslatorStillLoading() {
-        val result = ImageTranslationFormatter.composeResult(
-            recognizedText = "",
-            translatedText = "",
-            status = "正在准备英语→中文翻译模型"
-        )
-
-        assertEquals(
-            "英文：（未识别到英文）\n中文：（翻译模型准备中）\n状态：正在准备英语→中文翻译模型",
-            result
-        )
-    }
-
-    @Test
-    fun composeResult_showsDownloadHintWhenTranslatorModelIsDownloading() {
-        val result = ImageTranslationFormatter.composeResult(
-            recognizedText = "",
-            translatedText = "",
-            status = "下载中（已耗时 8s，进度：ML Kit 未提供百分比）"
-        )
-
-        assertEquals(
-            "英文：（未识别到英文）\n中文：（翻译模型下载中）\n状态：下载中（已耗时 8s，进度：ML Kit 未提供百分比）",
-            result
-        )
-    }
-
-    @Test
-    fun composeResult_showsRecognitionHintWhileWaitingForOcrOutput() {
-        val result = ImageTranslationFormatter.composeResult(
-            recognizedText = "",
-            translatedText = "",
-            status = "正在识别图片中的英文"
-        )
-
-        assertEquals(
-            "英文：（未识别到英文）\n中文：（等待识别英文）\n状态：正在识别图片中的英文",
-            result
-        )
-    }
-
-    @Test
-    fun composeResult_showsGenericPlaceholderForOfflineTranslationStatus() {
-        val result = ImageTranslationFormatter.composeResult(
-            recognizedText = "Network error",
-            translatedText = "",
-            status = "正在进行内置离线翻译"
-        )
-
-        assertEquals(
-            "英文：Network error\n中文：（暂无翻译结果）\n状态：正在进行内置离线翻译",
-            result
-        )
-    }
-
-    @Test
-    fun composeResult_doesNotTreatReadyStatusAsModelPreparing() {
-        val result = ImageTranslationFormatter.composeResult(
-            recognizedText = "",
-            translatedText = "",
-            status = "准备就绪：可拍照或从相册选择英文图片（内置离线翻译）"
-        )
-
-        assertEquals(
-            "英文：（未识别到英文）\n中文：（暂无翻译结果）\n状态：准备就绪：可拍照或从相册选择英文图片（内置离线翻译）",
+            "原文：設定を開く\n译文：打开设置\n状态：Hy-MT 离线翻译完成",
             result
         )
     }
