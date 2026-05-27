@@ -1,6 +1,12 @@
 package com.wenjh.fanyiapp
 
 object ImageTranslationFormatter {
+    data class UiContent(
+        val recognizedText: String,
+        val translatedText: String,
+        val statusText: String
+    )
+
     fun normalizeRecognizedText(rawText: String): String {
         return rawText
             .lines()
@@ -9,11 +15,11 @@ object ImageTranslationFormatter {
             .joinToString("\n")
     }
 
-    fun composeResult(
+    fun buildUiContent(
         recognizedText: String,
         translatedText: String,
         status: String
-    ): String {
+    ): UiContent {
         val safeRecognized = recognizedText.ifBlank { "（未识别到英文）" }
         val safeTranslated = translatedText.ifBlank {
             when {
@@ -24,10 +30,27 @@ object ImageTranslationFormatter {
             }
         }
         val safeStatus = status.ifBlank { "等待中" }
+        return UiContent(
+            recognizedText = safeRecognized,
+            translatedText = safeTranslated,
+            statusText = safeStatus
+        )
+    }
+
+    fun composeResult(
+        recognizedText: String,
+        translatedText: String,
+        status: String
+    ): String {
+        val uiContent = buildUiContent(
+            recognizedText = recognizedText,
+            translatedText = translatedText,
+            status = status
+        )
         return listOf(
-            "英文：$safeRecognized",
-            "中文：$safeTranslated",
-            "状态：$safeStatus"
+            "英文：${uiContent.recognizedText}",
+            "中文：${uiContent.translatedText}",
+            "状态：${uiContent.statusText}"
         ).joinToString("\n")
     }
 }

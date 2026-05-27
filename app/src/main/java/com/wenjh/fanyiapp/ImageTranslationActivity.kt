@@ -1,5 +1,6 @@
 package com.wenjh.fanyiapp
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -25,7 +26,9 @@ import java.util.Locale
 
 class ImageTranslationActivity : AppCompatActivity() {
     private lateinit var previewImage: ImageView
-    private lateinit var resultText: TextView
+    private lateinit var recognizedTextView: TextView
+    private lateinit var translatedTextView: TextView
+    private lateinit var resultStatusTextView: TextView
     private lateinit var modelStatusText: TextView
     private lateinit var modelProgressBar: ProgressBar
     private lateinit var retryModelInitButton: Button
@@ -61,11 +64,17 @@ class ImageTranslationActivity : AppCompatActivity() {
     }
 
     private val pickImageLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) {
             showResult(status = "未选择图片", showToast = true)
             return@registerForActivityResult
+        }
+        runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
         }
         cleanupPendingPhotoIfNeeded(keepCurrent = false)
         currentPhotoUri = null
@@ -80,7 +89,9 @@ class ImageTranslationActivity : AppCompatActivity() {
         setContentView(R.layout.activity_image_translation)
 
         previewImage = findViewById(R.id.previewImage)
-        resultText = findViewById(R.id.resultText)
+        recognizedTextView = findViewById(R.id.recognizedText)
+        translatedTextView = findViewById(R.id.translatedText)
+        resultStatusTextView = findViewById(R.id.resultStatusText)
         modelStatusText = findViewById(R.id.modelStatusText)
         modelProgressBar = findViewById(R.id.modelProgressBar)
         retryModelInitButton = findViewById(R.id.retryModelInitButton)
@@ -94,7 +105,7 @@ class ImageTranslationActivity : AppCompatActivity() {
             launchHighResolutionCamera()
         }
         choosePhotoButton.setOnClickListener {
-            pickImageLauncher.launch("image/*")
+            pickImageLauncher.launch(arrayOf("image/*"))
         }
         retryModelInitButton.setOnClickListener {
             prepareTranslationEngine(forceToast = true)
@@ -306,11 +317,14 @@ class ImageTranslationActivity : AppCompatActivity() {
         if (clearTranslation) {
             lastTranslatedText = ""
         }
-        resultText.text = ImageTranslationFormatter.composeResult(
+        val uiContent = ImageTranslationFormatter.buildUiContent(
             recognizedText = lastRecognizedText,
             translatedText = lastTranslatedText,
             status = currentStatus
         )
+        recognizedTextView.text = uiContent.recognizedText
+        translatedTextView.text = uiContent.translatedText
+        resultStatusTextView.text = uiContent.statusText
         if (showToast || status.contains("失败") || status.contains("未选择") || status.contains("未拍到")) {
             Toast.makeText(this, status, Toast.LENGTH_SHORT).show()
         }

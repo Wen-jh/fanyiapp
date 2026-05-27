@@ -20,6 +20,10 @@
     <string name="image_preview_label">图片预览</string>
     <string name="image_preview_hint">拍照后会保留高清原图用于 OCR，小字识别效果更稳定。</string>
     <string name="image_result_label">识别与翻译结果</string>
+    <string name="image_result_hint">译文支持长按选择与复制，原文和状态分开展示，更方便核对。</string>
+    <string name="image_recognized_label">识别出的英文</string>
+    <string name="image_translated_label">翻译后的中文</string>
+    <string name="image_status_label">当前状态</string>
     <string name="image_model_label">Hy-MT 模型状态</string>
     <string name="image_model_retry">重新初始化离线模型</string>
     <string name="image_tips_label">使用建议</string>
