@@ -64,6 +64,9 @@ class SubtitleOverlayService : Service() {
     private var translator: Translator? = null
     private var translatorJob: Job? = null
     private var translatorDownloadStatusJob: Job? = null
+    private var hyMtEngine: PhotoTranslationEngine? = null
+    private var hyMtPrepareJob: Job? = null
+    private var hyMtPolishJob: Job? = null
     private var audioLoopJob: Job? = null
     private var audioSource: PlaybackCaptureAudioSource? = null
     private var voskRecognizer: VoskStreamingRecognizer? = null
@@ -86,6 +89,9 @@ class SubtitleOverlayService : Service() {
     private var enableAudioDump: Boolean = false
     private var dumpAsWav: Boolean = true
     private var lastLevelHint: String = "音量: 未知"
+    private var latestFinalToken: Long = 0L
+    private var latestDisplayedFinalSource: String = ""
+    private var latestDisplayedFinalMlKit: String = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -250,6 +256,22 @@ class SubtitleOverlayService : Service() {
         renderPipeline()
     }
 
+    private fun ensureHyMtPreparation() {
+        val existingEngine = hyMtEngine
+        if (existingEngine != null && existingEngine.currentState() is EngineState.Ready) {
+            return
+        }
+        if (hyMtPrepareJob?.isActive == true) {
+            return
+        }
+        val engine = existingEngine ?: HyMtTranslationEngine(applicationContext).also { hyMtEngine = it }
+        hyMtPrepareJob = serviceScope.launch {
+            runCatching {
+                engine.prepareIfNeeded()
+            }
+        }
+    }
+
     private fun startRecognitionLoop() {
         val source = audioSource
         val recognizer = voskRecognizer
@@ -390,6 +412,13 @@ class SubtitleOverlayService : Service() {
             return
         }
 
+        val finalToken = if (provisional) latestFinalToken else latestFinalToken + 1L
+        if (!provisional) {
+            latestFinalToken = finalToken
+            hyMtPolishJob?.cancel()
+            ensureHyMtPreparation()
+        }
+
         pendingTranslationCoordinator.markInFlight(normalizedText, provisional)
         translatorJob = serviceScope.launch {
             translationState = if (provisional) "正在低延迟翻译（预测）" else "正在翻译"
@@ -410,6 +439,13 @@ class SubtitleOverlayService : Service() {
                     } else if (provisional) {
                         "低延迟翻译已更新"
                     } else {
+                        latestDisplayedFinalSource = normalizedText
+                        latestDisplayedFinalMlKit = translated
+                        launchFinalPolish(
+                            sourceText = normalizedText,
+                            mlKitTranslation = translated,
+                            finalToken = finalToken
+                        )
                         "翻译完成"
                     }
                 } else {
@@ -427,6 +463,51 @@ class SubtitleOverlayService : Service() {
             renderPipeline()
             pendingTranslationCoordinator.consumeReadyAfter(normalizedText)?.let { next ->
                 translateRecognizedText(next.text, next.provisional)
+            }
+        }
+    }
+
+    private fun launchFinalPolish(sourceText: String, mlKitTranslation: String, finalToken: Long) {
+        val engine = hyMtEngine ?: return
+        val state = engine.currentState()
+        if (state !is EngineState.Ready) {
+            return
+        }
+
+        hyMtPolishJob?.cancel()
+        hyMtPolishJob = serviceScope.launch {
+            if (finalToken != latestFinalToken || sourceText != latestDisplayedFinalSource) {
+                return@launch
+            }
+            translationState = "翻译完成（正在润色）"
+            renderPipeline()
+            runCatching {
+                engine.translate(
+                    text = sourceText,
+                    sourceLanguage = "Japanese",
+                    targetLanguage = "Chinese"
+                )
+            }.onSuccess { result ->
+                val polished = result.text.trim()
+                if (!shouldApplyPolishedResult(
+                        finalToken = finalToken,
+                        sourceText = sourceText,
+                        currentSourceText = latestDisplayedFinalSource,
+                        expectedMlKitTranslation = mlKitTranslation,
+                        currentDisplayedTranslation = lastTranslatedText
+                    )) {
+                    return@onSuccess
+                }
+                if (polished.isNotBlank()) {
+                    lastTranslatedText = polished
+                    translationState = "翻译完成（已润色）"
+                    renderPipeline()
+                }
+            }.onFailure {
+                if (finalToken == latestFinalToken && sourceText == latestDisplayedFinalSource && lastTranslatedText == mlKitTranslation) {
+                    translationState = "翻译完成"
+                    renderPipeline()
+                }
             }
         }
     }
@@ -613,6 +694,8 @@ class SubtitleOverlayService : Service() {
         audioLoopJob?.cancel()
         translatorJob?.cancel()
         translatorDownloadStatusJob?.cancel()
+        hyMtPrepareJob?.cancel()
+        hyMtPolishJob?.cancel()
         debugDumpWriter?.close()
         debugDumpWriter = null
         voskRecognizer?.close()
@@ -622,6 +705,8 @@ class SubtitleOverlayService : Service() {
         audioSource = null
         translator?.close()
         translator = null
+        hyMtEngine?.release()
+        hyMtEngine = null
         mediaProjection?.stop()
         mediaProjection = null
         overlayView?.let { view -> windowManager?.removeView(view) }
@@ -632,5 +717,20 @@ class SubtitleOverlayService : Service() {
         windowManager = null
         serviceScope.cancel()
         super.onDestroy()
+    }
+
+    internal companion object FinalPolishGuard {
+        fun shouldApplyPolishedResult(
+            finalToken: Long,
+            sourceText: String,
+            currentSourceText: String,
+            expectedMlKitTranslation: String,
+            currentDisplayedTranslation: String,
+            latestFinalToken: Long = finalToken
+        ): Boolean {
+            if (finalToken != latestFinalToken) return false
+            if (sourceText != currentSourceText) return false
+            return currentDisplayedTranslation == expectedMlKitTranslation
+        }
     }
 }

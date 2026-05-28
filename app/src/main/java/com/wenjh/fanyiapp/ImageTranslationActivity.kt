@@ -18,7 +18,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -44,7 +50,8 @@ class ImageTranslationActivity : AppCompatActivity() {
     private lateinit var targetLanguageSpinner: Spinner
     private lateinit var translationEngine: PhotoTranslationEngine
 
-    private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private var textRecognizer: TextRecognizer? = null
+    private var activeOcrScript: HyMtLanguageSupport.OcrScript? = null
     private var analyzeJob: Job? = null
     private val languageOptions = HyMtLanguageSupport.supportedLanguages
     private var suppressLanguageSelectionCallback = false
@@ -152,7 +159,9 @@ class ImageTranslationActivity : AppCompatActivity() {
     override fun onDestroy() {
         analyzeJob?.cancel()
         translationEngine.release()
-        runCatching { textRecognizer.close() }
+        runCatching { textRecognizer?.close() }
+        textRecognizer = null
+        activeOcrScript = null
         super.onDestroy()
     }
 
@@ -247,6 +256,30 @@ class ImageTranslationActivity : AppCompatActivity() {
         return "准备就绪：可拍照或从相册选择图片（${selectedSourceLanguage().uiLabel} → ${selectedTargetLanguage().uiLabel}）"
     }
 
+    private fun getOrCreateTextRecognizer(): TextRecognizer {
+        val nextScript = selectedSourceLanguage().ocrScript
+        val currentRecognizer = textRecognizer
+        if (currentRecognizer != null && activeOcrScript == nextScript) {
+            return currentRecognizer
+        }
+
+        runCatching { currentRecognizer?.close() }
+        val recognizer = createTextRecognizer(nextScript)
+        textRecognizer = recognizer
+        activeOcrScript = nextScript
+        return recognizer
+    }
+
+    private fun createTextRecognizer(script: HyMtLanguageSupport.OcrScript): TextRecognizer {
+        return when (script) {
+            HyMtLanguageSupport.OcrScript.CHINESE -> TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+            HyMtLanguageSupport.OcrScript.JAPANESE -> TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+            HyMtLanguageSupport.OcrScript.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+            HyMtLanguageSupport.OcrScript.DEVANAGARI -> TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
+            HyMtLanguageSupport.OcrScript.LATIN -> TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        }
+    }
+
     private fun launchHighResolutionCamera() {
         val imageFile = createCameraImageFile()
         if (imageFile == null) {
@@ -301,7 +334,7 @@ class ImageTranslationActivity : AppCompatActivity() {
                 currentStatus = "正在识别图片中的文字"
                 showResult(status = currentStatus, clearTranslation = true)
                 val image = InputImage.fromFilePath(this@ImageTranslationActivity, uri)
-                val recognized = textRecognizer.process(image).await().text
+                val recognized = getOrCreateTextRecognizer().process(image).await().text
                 handleRecognizedText(recognized, requestToken)
             }.onFailure { error ->
                 if (analyzeRequestToken != requestToken) {

@@ -54,4 +54,20 @@ class OverlayUiModeDeciderTest {
             )
         )
     }
+
+    @Test
+    fun shouldAutoCollapse_staysTrueForPolishStates() {
+        assertTrue(
+            OverlayUiModeDecider.shouldAutoCollapse(
+                translationState = "翻译完成（正在润色）",
+                translated = "你好"
+            )
+        )
+        assertTrue(
+            OverlayUiModeDecider.shouldAutoCollapse(
+                translationState = "翻译完成（已润色）",
+                translated = "您好"
+            )
+        )
+    }
 }
