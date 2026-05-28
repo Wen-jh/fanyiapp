@@ -49,13 +49,13 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
         }
 
         val segments = splitForTranslation(text)
-        val translatedSegments = mutableListOf<String>()
+        val translatedSegments = mutableListOf<TranslatedSegment>()
         val rawSegments = mutableListOf<String>()
         var fallbackUsed = false
 
         for (segment in segments) {
             val prompt = HyMtPromptBuilder.build(
-                recognizedText = segment,
+                recognizedText = segment.text,
                 sourceLanguage = sourceLanguage,
                 targetLanguage = targetLanguage
             )
@@ -64,13 +64,16 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
             }
             val cleaned = HyMtResultParser.clean(rawOutput)
             val finalized = finalizeTranslationResult(
-                recognizedText = segment,
+                recognizedText = segment.text,
                 cleanedOutput = cleaned,
                 rawOutput = rawOutput,
                 sourceLanguage = sourceLanguage,
                 targetLanguage = targetLanguage
             )
-            translatedSegments += finalized.text
+            translatedSegments += TranslatedSegment(
+                text = finalized.text,
+                breakType = segment.breakType
+            )
             rawSegments += rawOutput
             if (finalized.backend == "builtin-fallback") {
                 fallbackUsed = true
@@ -79,7 +82,7 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
 
         state = EngineState.Ready
         return TranslationResult(
-            text = translatedSegments.joinToString("\n").trim(),
+            text = mergeTranslatedSegments(translatedSegments),
             backend = if (fallbackUsed) "builtin-fallback" else "hy-mt-native",
             rawOutput = rawSegments.joinToString("\n---\n")
         )
@@ -96,6 +99,21 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
     }
 
     companion object {
+        internal data class TranslationSegment(
+            val text: String,
+            val breakType: SegmentBreakType
+        )
+
+        internal data class TranslatedSegment(
+            val text: String,
+            val breakType: SegmentBreakType
+        )
+
+        internal enum class SegmentBreakType {
+            PARAGRAPH,
+            CONTINUATION
+        }
+
         internal fun finalizeTranslationResult(
             recognizedText: String,
             cleanedOutput: String,
@@ -148,63 +166,103 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
             return looksMostlyLatin(normalizedTranslated) && !containsCjk(translatedText)
         }
 
-        internal fun splitForTranslation(text: String, maxCharsPerSegment: Int = 260): List<String> {
-            val normalized = ImageTranslationFormatter.normalizeRecognizedText(text)
+        internal fun splitForTranslation(text: String, maxCharsPerSegment: Int = 260): List<TranslationSegment> {
+            val normalized = ImageTranslationFormatter.normalizeOcrTextForSegmentation(text)
             if (normalized.isBlank()) return emptyList()
-            if (normalized.length <= maxCharsPerSegment) return listOf(normalized)
-
-            val segments = mutableListOf<String>()
-            val current = StringBuilder()
-            val paragraphs = normalized.lines().filter { it.isNotBlank() }
-            for (paragraph in paragraphs) {
-                if (current.isEmpty()) {
-                    appendChunk(current, paragraph, maxCharsPerSegment, segments)
-                    continue
-                }
-                if (current.length + 1 + paragraph.length <= maxCharsPerSegment) {
-                    current.append('\n').append(paragraph)
-                } else {
-                    segments += current.toString()
-                    current.clear()
-                    appendChunk(current, paragraph, maxCharsPerSegment, segments)
-                }
+            if (normalized.length <= maxCharsPerSegment && !normalized.contains("\n\n")) {
+                return listOf(TranslationSegment(normalized, SegmentBreakType.PARAGRAPH))
             }
-            if (current.isNotEmpty()) {
-                segments += current.toString()
+
+            val segments = mutableListOf<TranslationSegment>()
+            val paragraphs = normalized.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
+            for (paragraph in paragraphs) {
+                val paragraphSegments = splitParagraph(paragraph, maxCharsPerSegment)
+                paragraphSegments.forEachIndexed { index, segment ->
+                    segments += TranslationSegment(
+                        text = segment,
+                        breakType = if (index == 0) SegmentBreakType.PARAGRAPH else SegmentBreakType.CONTINUATION
+                    )
+                }
             }
             return segments
         }
 
-        private fun appendChunk(
-            current: StringBuilder,
-            paragraph: String,
-            maxCharsPerSegment: Int,
-            segments: MutableList<String>
-        ) {
-            if (paragraph.length <= maxCharsPerSegment) {
-                current.append(paragraph)
-                return
-            }
+        internal fun mergeTranslatedSegments(segments: List<TranslatedSegment>): String {
+            if (segments.isEmpty()) return ""
 
-            var start = 0
-            while (start < paragraph.length) {
-                val end = (start + maxCharsPerSegment).coerceAtMost(paragraph.length)
-                val chunk = paragraph.substring(start, end).trim()
-                if (chunk.isNotEmpty()) {
-                    if (current.isEmpty()) {
-                        current.append(chunk)
-                    } else {
-                        segments += current.toString()
-                        current.clear()
-                        current.append(chunk)
-                    }
-                    if (current.length >= maxCharsPerSegment) {
-                        segments += current.toString()
-                        current.clear()
+            val merged = StringBuilder()
+            segments.forEachIndexed { index, segment ->
+                val text = segment.text.trim()
+                if (text.isEmpty()) return@forEachIndexed
+                if (merged.isEmpty()) {
+                    merged.append(text)
+                    return@forEachIndexed
+                }
+
+                when (segment.breakType) {
+                    SegmentBreakType.PARAGRAPH -> merged.append("\n\n").append(text)
+                    SegmentBreakType.CONTINUATION -> {
+                        if (shouldAppendWithSpace(merged.last(), text.first())) {
+                            merged.append(' ')
+                        }
+                        merged.append(text)
                     }
                 }
-                start = end
             }
+            return merged.toString().trim()
+        }
+
+        private fun splitParagraph(paragraph: String, maxCharsPerSegment: Int): List<String> {
+            val normalizedParagraph = paragraph.replace(Regex("\\s+"), " ").trim()
+            if (normalizedParagraph.length <= maxCharsPerSegment) {
+                return listOf(normalizedParagraph)
+            }
+
+            val segments = mutableListOf<String>()
+            var remaining = normalizedParagraph
+            while (remaining.length > maxCharsPerSegment) {
+                val splitIndex = findBestSplitIndex(remaining, maxCharsPerSegment)
+                val head = remaining.substring(0, splitIndex).trim()
+                if (head.isNotEmpty()) {
+                    segments += head
+                }
+                remaining = remaining.substring(splitIndex).trim()
+                if (remaining.isEmpty()) break
+            }
+            if (remaining.isNotEmpty()) {
+                segments += remaining
+            }
+            return segments
+        }
+
+        private fun findBestSplitIndex(text: String, maxCharsPerSegment: Int): Int {
+            val sentenceBreak = findLastBoundary(text, maxCharsPerSegment, listOf('.', '!', '?', '。', '！', '？', ';', '；'))
+            if (sentenceBreak != null) return sentenceBreak
+
+            val softBreak = findLastBoundary(text, maxCharsPerSegment, listOf(',', '，', ':', '：', '、'))
+            if (softBreak != null) return softBreak
+
+            val wordBreak = text.lastIndexOf(' ', startIndex = maxCharsPerSegment.coerceAtMost(text.lastIndex))
+            if (wordBreak >= maxCharsPerSegment / 2) return wordBreak + 1
+
+            return maxCharsPerSegment.coerceAtMost(text.length)
+        }
+
+        private fun findLastBoundary(text: String, maxCharsPerSegment: Int, boundaries: List<Char>): Int? {
+            val searchEnd = maxCharsPerSegment.coerceAtMost(text.length - 1)
+            for (index in searchEnd downTo 0) {
+                val current = text[index]
+                if (current in boundaries && index >= maxCharsPerSegment / 2) {
+                    return index + 1
+                }
+            }
+            return null
+        }
+
+        private fun shouldAppendWithSpace(previousChar: Char, nextChar: Char): Boolean {
+            if (previousChar.isWhitespace() || nextChar.isWhitespace()) return false
+            if (containsCjk(previousChar.toString()) || containsCjk(nextChar.toString())) return false
+            return true
         }
 
         private fun normalizeForComparison(text: String): String {

@@ -76,19 +76,86 @@ class HyMtTranslationEngineTest {
     fun splitForTranslation_keepsShortTextAsSingleSegment() {
         val segments = HyMtTranslationEngine.splitForTranslation("Open settings")
 
-        assertEquals(listOf("Open settings"), segments)
+        assertEquals(1, segments.size)
+        assertEquals("Open settings", segments.single().text)
+        assertEquals(HyMtTranslationEngine.SegmentBreakType.PARAGRAPH, segments.single().breakType)
     }
 
     @Test
-    fun splitForTranslation_breaksLongParagraphsIntoOrderedSegments() {
-        val source = buildString {
-            repeat(80) { append("Open settings and continue learning. ") }
-        }
+    fun splitForTranslation_breaksLongParagraphsAtSentenceBoundaries() {
+        val source = "Open settings and continue learning. Review the translation output carefully. Keep each segment natural and readable."
 
-        val segments = HyMtTranslationEngine.splitForTranslation(source, maxCharsPerSegment = 80)
+        val segments = HyMtTranslationEngine.splitForTranslation(source, maxCharsPerSegment = 55)
 
         assertTrue(segments.size > 1)
-        assertTrue(segments.all { it.length <= 80 })
-        assertTrue(segments.joinToString(" ").contains("Open settings"))
+        assertTrue(segments.all { it.text.length <= 55 })
+        assertEquals(HyMtTranslationEngine.SegmentBreakType.PARAGRAPH, segments.first().breakType)
+        assertTrue(segments.drop(1).all { it.breakType == HyMtTranslationEngine.SegmentBreakType.CONTINUATION })
+        assertTrue(segments.first().text.endsWith("."))
+    }
+
+    @Test
+    fun splitForTranslation_preservesParagraphBoundaries() {
+        val source = "First paragraph explains the setup and expected result.\n\nSecond paragraph adds another note for translation."
+
+        val segments = HyMtTranslationEngine.splitForTranslation(source, maxCharsPerSegment = 120)
+
+        assertEquals(2, segments.size)
+        assertEquals(HyMtTranslationEngine.SegmentBreakType.PARAGRAPH, segments[0].breakType)
+        assertEquals(HyMtTranslationEngine.SegmentBreakType.PARAGRAPH, segments[1].breakType)
+        assertTrue(segments[0].text.startsWith("First paragraph"))
+        assertTrue(segments[1].text.startsWith("Second paragraph"))
+    }
+
+    @Test
+    fun splitForTranslation_fallsBackToHardSplitWhenNoBoundaryExists() {
+        val source = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
+
+        val segments = HyMtTranslationEngine.splitForTranslation(source, maxCharsPerSegment = 20)
+
+        assertEquals(3, segments.size)
+        assertTrue(segments.all { it.text.length <= 20 })
+        assertEquals(HyMtTranslationEngine.SegmentBreakType.PARAGRAPH, segments.first().breakType)
+        assertTrue(segments.drop(1).all { it.breakType == HyMtTranslationEngine.SegmentBreakType.CONTINUATION })
+    }
+
+    @Test
+    fun mergeTranslatedSegments_keepsParagraphBreaksAndInlineContinuations() {
+        val merged = HyMtTranslationEngine.mergeTranslatedSegments(
+            listOf(
+                HyMtTranslationEngine.TranslatedSegment(
+                    text = "打开设置",
+                    breakType = HyMtTranslationEngine.SegmentBreakType.PARAGRAPH
+                ),
+                HyMtTranslationEngine.TranslatedSegment(
+                    text = "继续学习",
+                    breakType = HyMtTranslationEngine.SegmentBreakType.CONTINUATION
+                ),
+                HyMtTranslationEngine.TranslatedSegment(
+                    text = "下一段说明",
+                    breakType = HyMtTranslationEngine.SegmentBreakType.PARAGRAPH
+                )
+            )
+        )
+
+        assertEquals("打开设置继续学习\n\n下一段说明", merged)
+    }
+
+    @Test
+    fun mergeTranslatedSegments_insertsSpaceForLatinContinuation() {
+        val merged = HyMtTranslationEngine.mergeTranslatedSegments(
+            listOf(
+                HyMtTranslationEngine.TranslatedSegment(
+                    text = "Open settings",
+                    breakType = HyMtTranslationEngine.SegmentBreakType.PARAGRAPH
+                ),
+                HyMtTranslationEngine.TranslatedSegment(
+                    text = "and continue learning",
+                    breakType = HyMtTranslationEngine.SegmentBreakType.CONTINUATION
+                )
+            )
+        )
+
+        assertEquals("Open settings and continue learning", merged)
     }
 }

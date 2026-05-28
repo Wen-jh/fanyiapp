@@ -15,6 +15,17 @@ object ImageTranslationFormatter {
             .joinToString("\n")
     }
 
+    fun normalizeOcrTextForSegmentation(rawText: String): String {
+        return rawText
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .lines()
+            .joinToString("\n") { it.trim() }
+            .replace(Regex("\n[ \t]+"), "\n")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
+    }
+
     fun buildUiContent(
         recognizedText: String,
         translatedText: String,
