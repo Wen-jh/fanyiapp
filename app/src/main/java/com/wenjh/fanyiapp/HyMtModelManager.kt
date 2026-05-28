@@ -19,55 +19,80 @@ class HyMtModelManager(private val context: Context) {
 
     fun currentState(): EngineState = state
 
-    suspend fun prepareIfNeeded(onProgress: ((PreparationProgress) -> Unit)? = null): PreparationResult =
-        prepareMutex.withLock {
-            withContext(Dispatchers.IO) {
-                if (installedModelFile.exists() && installedModelFile.length() > 0L) {
-                    state = EngineState.Ready
-                    return@withContext PreparationResult(true, "Hy-MT 离线模型已就绪")
-                }
+    suspend fun prepareIfNeeded(
+        onProgress: ((PreparationProgress) -> Unit)? = null
+    ): PreparationResult = prepareMutex.withLock {
+        withContext(Dispatchers.IO) {
+            if (installedModelFile.exists() && installedModelFile.length() > 0L) {
+                state = EngineState.Ready
+                return@withContext PreparationResult(true, "Hy-MT 离线模型已就绪")
+            }
 
-                state = EngineState.Preparing("正在检查 Hy-MT 离线模型", null)
-                installDir.mkdirs()
+            if (!isBundledModelAvailable()) {
+                state = EngineState.Error("Hy-MT 模型文件缺失")
+                return@withContext PreparationResult(
+                    false,
+                    "Hy-MT 模型文件缺失：请将 $modelFileName 打包到 app/src/main/assets/hy_mt/"
+                )
+            }
 
-                val totalBytes = runCatching { context.assets.openFd(assetPath).length }
-                    .getOrElse { -1L }
+            state = EngineState.Preparing("正在解包 Hy-MT 离线模型", null)
+            installDir.mkdirs()
 
-                context.assets.open(assetPath).use { input ->
-                    FileOutputStream(installedModelFile).use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        var copied = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            output.write(buffer, 0, read)
-                            copied += read
-                            val progress = PreparationProgress(
-                                message = if (totalBytes > 0L) {
-                                    "正在解包 Hy-MT 离线模型（${((copied * 100L) / totalBytes).toInt().coerceIn(0, 100)}%）"
-                                } else {
-                                    "正在解包 Hy-MT 离线模型"
-                                },
-                                copiedBytes = copied,
-                                totalBytes = totalBytes
-                            )
-                            state = EngineState.Preparing(progress.message, progress.percent)
-                            onProgress?.invoke(progress)
-                        }
-                        output.fd.sync()
-                        if (!installedModelFile.exists() || installedModelFile.length() <= 0L) {
-                            state = EngineState.Error("Hy-MT 离线模型解包失败")
-                            return@withContext PreparationResult(false, "Hy-MT 离线模型解包失败")
-                        }
-                        state = EngineState.Ready
-                        PreparationResult(
-                            ready = true,
-                            message = "Hy-MT 离线模型已解包完成",
+            val totalBytes = runCatching { context.assets.openFd(assetPath).length }
+                .getOrElse { -1L }
+
+            context.assets.open(assetPath).use { input ->
+                FileOutputStream(installedModelFile).use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var copied = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        output.write(buffer, 0, read)
+                        copied += read
+                        val progress = PreparationProgress(
+                            message = if (totalBytes > 0L) {
+                                "正在解包 Hy-MT 离线模型（${((copied * 100L) / totalBytes).toInt().coerceIn(0, 100)}%）"
+                            } else {
+                                "正在解包 Hy-MT 离线模型"
+                            },
                             copiedBytes = copied,
-                            totalBytes = if (totalBytes > 0L) totalBytes else null
+                            totalBytes = totalBytes
                         )
+                        state = EngineState.Preparing(progress.message, progress.percent)
+                        onProgress?.invoke(progress)
                     }
+                    output.fd.sync()
                 }
             }
+
+            if (!installedModelFile.exists() || installedModelFile.length() <= 0L) {
+                state = EngineState.Error("Hy-MT 离线模型解包失败")
+                return@withContext PreparationResult(false, "Hy-MT 离线模型解包失败")
+            }
+
+            state = EngineState.Ready
+            PreparationResult(
+                ready = true,
+                message = "Hy-MT 离线模型解包完成",
+                copiedBytes = installedModelFile.length(),
+                totalBytes = if (totalBytes > 0L) totalBytes else null
+            )
         }
+    }
+
+    private fun isBundledModelAvailable(): Boolean {
+        return runCatching {
+            context.assets.openFd(assetPath).use { descriptor ->
+                descriptor.length > 0L
+            }
+        }.getOrElse {
+            runCatching {
+                context.assets.open(assetPath).use { input ->
+                    input.available() > 0
+                }
+            }.getOrDefault(false)
+        }
+    }
 }

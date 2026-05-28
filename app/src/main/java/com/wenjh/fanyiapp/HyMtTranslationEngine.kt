@@ -10,6 +10,7 @@ import java.util.Locale
 class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngine {
     private val inferenceMutex = Mutex()
     private val modelManager = HyMtModelManager(context)
+
     @Volatile
     private var state: EngineState = EngineState.Idle
 
@@ -42,8 +43,12 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
         }
     }
 
-    override suspend fun translate(text: String, sourceLanguage: String, targetLanguage: String): TranslationResult = inferenceMutex.withLock {
-        state = EngineState.Translating("正在进行 Hy-MT 离线翻译（${sourceLanguage} → ${targetLanguage}）")
+    override suspend fun translate(
+        text: String,
+        sourceLanguage: String,
+        targetLanguage: String
+    ): TranslationResult = inferenceMutex.withLock {
+        state = EngineState.Translating("正在进行 Hy-MT 离线翻译：$sourceLanguage → $targetLanguage")
         if (!HyMtNativeBridge.isReady()) {
             error("Hy-MT native 推理尚未就绪")
         }
@@ -81,7 +86,7 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
         }
 
         state = EngineState.Ready
-        return TranslationResult(
+        TranslationResult(
             text = mergeTranslatedSegments(translatedSegments),
             backend = if (fallbackUsed) "builtin-fallback" else "hy-mt-native",
             rawOutput = rawSegments.joinToString("\n---\n")
@@ -145,7 +150,9 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
             sourceLanguage: String,
             targetLanguage: String
         ): Boolean {
-            if (!sourceLanguage.equals("English", ignoreCase = true) || !targetLanguage.equals("Chinese", ignoreCase = true)) {
+            if (!sourceLanguage.equals("English", ignoreCase = true) ||
+                !targetLanguage.equals("Chinese", ignoreCase = true)
+            ) {
                 return false
             }
 
@@ -166,7 +173,10 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
             return looksMostlyLatin(normalizedTranslated) && !containsCjk(translatedText)
         }
 
-        internal fun splitForTranslation(text: String, maxCharsPerSegment: Int = 260): List<TranslationSegment> {
+        internal fun splitForTranslation(
+            text: String,
+            maxCharsPerSegment: Int = 260
+        ): List<TranslationSegment> {
             val normalized = ImageTranslationFormatter.normalizeOcrTextForSegmentation(text)
             if (normalized.isBlank()) return emptyList()
             if (normalized.length <= maxCharsPerSegment && !normalized.contains("\n\n")) {
@@ -174,7 +184,10 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
             }
 
             val segments = mutableListOf<TranslationSegment>()
-            val paragraphs = normalized.split(Regex("\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
+            val paragraphs = normalized
+                .split(Regex("\\n\\s*\\n"))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
             for (paragraph in paragraphs) {
                 val paragraphSegments = splitParagraph(paragraph, maxCharsPerSegment)
                 paragraphSegments.forEachIndexed { index, segment ->

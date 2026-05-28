@@ -35,7 +35,7 @@ object ImageTranslationFormatter {
         val safeTranslated = translatedText.ifBlank {
             when {
                 status.contains("下载中") -> "（翻译模型下载中）"
-                status.contains("正在准备") || status.contains("模型准备") || status.contains("正在解包") || status.contains("Hy-MT 离线模型") -> "（翻译模型准备中）"
+                status.contains("正在准备") || status.contains("模型状态") || status.contains("正在解包") -> "（翻译模型准备中）"
                 status.contains("识别") -> "（等待识别原文）"
                 else -> "（暂无翻译结果）"
             }

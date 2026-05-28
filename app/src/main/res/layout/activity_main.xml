@@ -2,162 +2,340 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/surface_background"
+    android:background="@color/home_background"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingStart="20dp"
+        android:paddingTop="34dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="28dp">
+
+        <ImageButton
+            android:id="@+id/settingsButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="end"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/main_action_settings"
+            android:padding="8dp"
+            android:src="@drawable/ic_home_settings" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
             android:text="@string/main_title"
-            android:textColor="@color/text_primary"
-            android:textSize="34sp"
+            android:textColor="@android:color/white"
+            android:textSize="38sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:layout_marginBottom="20dp"
+            android:layout_marginTop="8dp"
             android:text="@string/main_subtitle"
-            android:textColor="@color/text_secondary"
-            android:textSize="16sp" />
+            android:textColor="#A1A1AA"
+            android:textSize="18sp" />
 
         <LinearLayout
+            android:id="@+id/textTranslateButton"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            android:background="@android:color/white"
-            android:elevation="2dp"
-            android:orientation="vertical"
-            android:padding="18dp">
+            android:layout_height="250dp"
+            android:layout_marginTop="36dp"
+            android:background="@drawable/bg_home_input"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:orientation="vertical">
 
             <TextView
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/main_input_card_title"
-                android:textColor="@color/text_primary"
-                android:textSize="18sp"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:gravity="top"
+                android:text="@string/main_input_hint"
+                android:textColor="#3F3F46"
+                android:textSize="24sp"
                 android:textStyle="bold" />
 
-            <TextView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/main_input_card_desc"
-                android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/textTranslateButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="@string/main_action_text"
-                android:textAllCaps="false" />
+                <LinearLayout
+                    android:id="@+id/sourceLanguageButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_home_chip"
+                    android:gravity="center"
+                    android:orientation="horizontal"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp">
+
+                    <TextView
+                        android:id="@+id/sourceLanguageText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxWidth="96dp"
+                        android:singleLine="true"
+                        android:text="@string/main_language_source_default"
+                        android:textColor="#E5E7EB"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_home_chevron_down" />
+                </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/swapLanguageButton"
+                    android:layout_width="44dp"
+                    android:layout_height="52dp"
+                    android:layout_marginStart="2dp"
+                    android:layout_marginEnd="2dp"
+                    android:background="@drawable/bg_home_chip"
+                    android:contentDescription="@string/text_translation_swap"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_home_swap" />
+
+                <LinearLayout
+                    android:id="@+id/targetLanguageButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_home_chip"
+                    android:gravity="center"
+                    android:orientation="horizontal"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="14dp">
+
+                    <TextView
+                        android:id="@+id/targetLanguageText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxWidth="96dp"
+                        android:singleLine="true"
+                        android:text="@string/main_language_target_default"
+                        android:textColor="#E5E7EB"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginStart="4dp"
+                        android:src="@drawable/ic_home_chevron_down" />
+                </LinearLayout>
+
+                <Space
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <ImageView
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_home_chip"
+                    android:contentDescription="@string/main_action_voice"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_home_mic" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:layout_marginTop="22dp"
             android:orientation="horizontal"
             android:weightSum="2">
 
             <LinearLayout
+                android:id="@+id/imageTranslateButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="104dp"
+                android:layout_marginEnd="6dp"
                 android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:background="@android:color/white"
-                android:elevation="2dp"
-                android:orientation="vertical"
-                android:padding="18dp">
+                android:background="@drawable/bg_feature_blue"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_icon_blue"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_home_camera" />
 
                 <TextView
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
                     android:text="@string/main_feature_image_title"
-                    android:textColor="@color/text_primary"
-                    android:textSize="18sp"
+                    android:textColor="#F4F4F5"
+                    android:textSize="20sp"
                     android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/subtitleTranslateButton"
+                android:layout_width="0dp"
+                android:layout_height="104dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_feature_green"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_icon_green"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_home_chat" />
 
                 <TextView
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/main_feature_image_desc"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
-
-                <Button
-                    android:id="@+id/imageTranslateButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="@string/main_action_image"
-                    android:textAllCaps="false" />
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:text="@string/main_feature_live_title"
+                    android:textColor="#F4F4F5"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
             </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:weightSum="2">
+
+            <LinearLayout
+                android:id="@+id/voiceTranslateButton"
+                android:layout_width="0dp"
+                android:layout_height="104dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_feature_purple"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_icon_purple"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_home_wave" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:text="@string/main_feature_voice_title"
+                    android:textColor="#F4F4F5"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/documentTranslateButton"
+                android:layout_width="0dp"
+                android:layout_height="104dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:alpha="0.72"
+                android:background="@drawable/bg_feature_gray"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="@drawable/bg_icon_cyan"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_home_document" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:text="@string/main_feature_document_title"
+                    android:textColor="#F4F4F5"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/screenTranslateButton"
+            android:layout_width="match_parent"
+            android:layout_height="132dp"
+            android:layout_marginTop="22dp"
+            android:alpha="0.82"
+            android:background="@drawable/bg_feature_large"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@drawable/bg_icon_pale"
+                android:padding="12dp"
+                android:src="@drawable/ic_home_keyboard" />
 
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
                 android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:background="@android:color/white"
-                android:elevation="2dp"
-                android:orientation="vertical"
-                android:padding="18dp">
+                android:orientation="vertical">
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/main_feature_live_title"
-                    android:textColor="@color/text_primary"
-                    android:textSize="18sp"
+                    android:text="@string/main_feature_screen_title"
+                    android:textColor="#F4F4F5"
+                    android:textSize="20sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/main_feature_live_desc"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
-
-                <Button
-                    android:id="@+id/subtitleTranslateButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="@string/main_action_subtitle"
-                    android:textAllCaps="false" />
+                    android:layout_marginTop="6dp"
+                    android:text="@string/main_feature_screen_subtitle"
+                    android:textColor="#A1A1AA"
+                    android:textSize="16sp" />
             </LinearLayout>
         </LinearLayout>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:text="@string/main_status_label"
-            android:textColor="@color/text_primary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/statusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@android:color/white"
-            android:lineSpacingExtra="3dp"
-            android:padding="18dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="15sp" />
-
     </LinearLayout>
 </ScrollView>

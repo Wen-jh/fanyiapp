@@ -3,7 +3,9 @@ package com.wenjh.fanyiapp
 import com.arm.aichat.internal.InferenceEngineImpl
 
 object HyMtNativeBridge {
-    private const val SYSTEM_PROMPT = "你是一个离线翻译引擎。请把用户发来的英文 OCR 文本翻译成自然、准确、简洁的简体中文。只输出中文译文，不要解释，不要重复原文。"
+    private const val SYSTEM_PROMPT =
+        "你是一个离线翻译引擎。请把用户给出的 OCR 文本翻译成自然、准确、简洁的目标语言。" +
+            "只输出译文，不要解释，不要重复原文，不要补充额外说明。"
 
     @Volatile
     private var ready = false
