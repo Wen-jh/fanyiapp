@@ -717,18 +717,16 @@ class SubtitleOverlayService : Service() {
         super.onDestroy()
     }
 
-    internal companion object FinalPolishGuard {
-        fun shouldApplyPolishedResult(
-            finalToken: Long,
-            sourceText: String,
-            currentSourceText: String,
-            expectedMlKitTranslation: String,
-            currentDisplayedTranslation: String,
-            latestFinalToken: Long = finalToken
-        ): Boolean {
-            if (finalToken != latestFinalToken) return false
-            if (sourceText != currentSourceText) return false
-            return currentDisplayedTranslation == expectedMlKitTranslation
-        }
+    private fun shouldApplyPolishedResult(
+        finalToken: Long,
+        sourceText: String,
+        currentSourceText: String,
+        expectedMlKitTranslation: String,
+        currentDisplayedTranslation: String,
+        latestFinalToken: Long = this.latestFinalToken
+    ): Boolean {
+        if (finalToken != latestFinalToken) return false
+        if (sourceText != currentSourceText) return false
+        return currentDisplayedTranslation == expectedMlKitTranslation
     }
 }
