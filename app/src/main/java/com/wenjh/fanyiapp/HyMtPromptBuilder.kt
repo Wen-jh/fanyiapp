@@ -5,7 +5,7 @@ object HyMtPromptBuilder {
         val normalizedText = ImageTranslationFormatter.normalizeRecognizedText(recognizedText)
         return """
             请把下面的 OCR 文本从 ${sourceLanguage} 翻译成自然、简洁、准确的 ${targetLanguage}。
-            只输出译文，不要解释，不要重复原文。
+            只输出当前这一段对应的译文，不要解释，不要重复原文，不要补充额外说明。
             源语言：${sourceLanguage}
             目标语言：${targetLanguage}
 

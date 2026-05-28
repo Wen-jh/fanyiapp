@@ -31,6 +31,14 @@
         </provider>
 
         <activity
+            android:name=".TextTranslationActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SubtitleControlActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ImageTranslationActivity"
             android:exported="false" />
 
