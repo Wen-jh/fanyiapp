@@ -10,8 +10,8 @@ import android.os.Build
 import kotlin.math.sqrt
 
 enum class AudioInputMode(val label: String) {
-    PLAYBACK_CAPTURE("播放捕获+本地识别"),
-    MICROPHONE("麦克风+本地识别")
+    PLAYBACK_CAPTURE("播放捕获 + 本地识别"),
+    MICROPHONE("麦克风 + 本地识别")
 }
 
 class PlaybackCaptureAudioSource private constructor(

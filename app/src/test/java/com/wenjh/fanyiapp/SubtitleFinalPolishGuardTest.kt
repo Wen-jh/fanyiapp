@@ -10,8 +10,8 @@ class SubtitleFinalPolishGuardTest {
         assertTrue(
             SubtitleOverlayService.shouldApplyPolishedResult(
                 finalToken = 3L,
-                sourceText = "ありがとうございます",
-                currentSourceText = "ありがとうございます",
+                sourceText = "ありがとうございました",
+                currentSourceText = "ありがとうございました",
                 expectedMlKitTranslation = "非常感谢",
                 currentDisplayedTranslation = "非常感谢",
                 latestFinalToken = 3L
@@ -24,8 +24,8 @@ class SubtitleFinalPolishGuardTest {
         assertFalse(
             SubtitleOverlayService.shouldApplyPolishedResult(
                 finalToken = 3L,
-                sourceText = "ありがとうございます",
-                currentSourceText = "ありがとうございます",
+                sourceText = "ありがとうございました",
+                currentSourceText = "ありがとうございました",
                 expectedMlKitTranslation = "非常感谢",
                 currentDisplayedTranslation = "非常感谢",
                 latestFinalToken = 4L
@@ -38,7 +38,7 @@ class SubtitleFinalPolishGuardTest {
         assertFalse(
             SubtitleOverlayService.shouldApplyPolishedResult(
                 finalToken = 3L,
-                sourceText = "ありがとうございます",
+                sourceText = "ありがとうございました",
                 currentSourceText = "次の文です",
                 expectedMlKitTranslation = "非常感谢",
                 currentDisplayedTranslation = "非常感谢",
@@ -52,8 +52,8 @@ class SubtitleFinalPolishGuardTest {
         assertFalse(
             SubtitleOverlayService.shouldApplyPolishedResult(
                 finalToken = 3L,
-                sourceText = "ありがとうございます",
-                currentSourceText = "ありがとうございます",
+                sourceText = "ありがとうございました",
+                currentSourceText = "ありがとうございました",
                 expectedMlKitTranslation = "非常感谢",
                 currentDisplayedTranslation = "这是新的译文",
                 latestFinalToken = 3L

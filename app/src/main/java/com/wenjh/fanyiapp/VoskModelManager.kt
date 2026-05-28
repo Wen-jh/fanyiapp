@@ -71,7 +71,7 @@ class VoskModelManager(
             copyModelAssets(context, resolution.modelDir)
             if (!hasRequiredModelFiles(resolution.modelDir)) {
                 throw IllegalStateException(
-                    "未发现真实 Vosk 日语模型文件，请将 vosk-model-small-ja-0.22 解压到 app/src/main/assets/$assetRoot/"
+                    "未发现完整的 Vosk 日语模型文件，请将 vosk-model-small-ja-0.22 解压到 app/src/main/assets/$assetRoot/"
                 )
             }
             resolution.markerFile.writeText("ready")

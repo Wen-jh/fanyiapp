@@ -16,13 +16,13 @@ object SubtitleOverlayFormatter {
         originalLabel: String = "日语",
         translatedLabel: String = "中文"
     ): String {
-        val safeOriginal = original.ifBlank { "（未识别到${originalLabel}）" }
+        val safeOriginal = original.ifBlank { "（未识别到$originalLabel）" }
         val safeTranslated = translated.ifBlank { status.ifBlank { "翻译中…" } }
         val safeStatus = status.ifBlank { "等待中" }
         return listOf(
             "模式：$modeLabel",
-            "${originalLabel}：$safeOriginal",
-            "${translatedLabel}：$safeTranslated",
+            "$originalLabel：$safeOriginal",
+            "$translatedLabel：$safeTranslated",
             "状态：$safeStatus"
         ).joinToString("\n")
     }
@@ -37,18 +37,15 @@ object SubtitleOverlayFormatter {
     ): String {
         val safeOriginal = original.ifBlank { "（等待识别）" }
         val safeTranslated = translated.ifBlank {
-            when {
-                translationState.contains("先显示原文") -> safeOriginal
-                translationState.contains("下载中") -> "（翻译模型下载中）"
-                translationState.contains("正在准备") -> "（翻译模型准备中）"
-                translationState.contains("等待更完整翻译") -> "（等待更完整翻译结果）"
-                recognitionState.contains("实时") && original.isNotBlank() -> "（等待更稳定语句后翻译）"
-                else -> "（等待翻译）"
-            }
+            overlayTranslationPlaceholder(
+                translationState = translationState,
+                recognitionState = recognitionState,
+                original = original
+            )
         }
         return listOf(
-            "${originalLabel}：$safeOriginal",
-            "${translatedLabel}：$safeTranslated"
+            "$originalLabel：$safeOriginal",
+            "$translatedLabel：$safeTranslated"
         ).joinToString("\n")
     }
 
@@ -63,18 +60,23 @@ object SubtitleOverlayFormatter {
         translated: String,
         levelHint: String,
         originalLabel: String = "日语",
-        translatedLabel: String = "中文"
+        translatedLabel: String = "中文",
+        showDetails: Boolean = true
     ): String {
-        val safeOriginal = original.ifBlank { "（未识别到${originalLabel}）" }
+        val safeOriginal = original.ifBlank { "（未识别到$originalLabel）" }
         val safeTranslated = translated.ifBlank {
-            when {
-                translationState.contains("先显示原文") -> "（翻译尚未就绪，当前先显示原文）"
-                translationState.contains("下载中") -> "（翻译模型下载中）"
-                translationState.contains("正在准备") -> "（翻译模型准备中）"
-                translationState.contains("等待更完整翻译") -> "（等待更完整翻译结果）"
-                recognitionState.contains("实时") && original.isNotBlank() -> "（等待更稳定语句后翻译）"
-                else -> "（暂无翻译结果）"
-            }
+            pipelineTranslationPlaceholder(
+                translationState = translationState,
+                recognitionState = recognitionState,
+                original = original
+            )
+        }
+
+        if (!showDetails) {
+            return listOf(
+                "$originalLabel：$safeOriginal",
+                "$translatedLabel：$safeTranslated"
+            ).joinToString("\n")
         }
 
         val safeLevelHint = levelHint.ifBlank { "音量: 未知" }
@@ -86,8 +88,40 @@ object SubtitleOverlayFormatter {
             "翻译：${translationState.ifBlank { "未开始" }}",
             "调试：${dumpState.ifBlank { "未启用" }}",
             safeLevelHint,
-            "${originalLabel}：$safeOriginal",
-            "${translatedLabel}：$safeTranslated"
+            "$originalLabel：$safeOriginal",
+            "$translatedLabel：$safeTranslated"
         ).joinToString("\n")
     }
+
+    private fun overlayTranslationPlaceholder(
+        translationState: String,
+        recognitionState: String,
+        original: String
+    ): String {
+        return when {
+            translationState.contains("先显示原文") -> normalizeBracketed("翻译尚未就绪，当前先显示原文")
+            translationState.contains("下载") -> normalizeBracketed("翻译模型下载中")
+            translationState.contains("准备") -> normalizeBracketed("翻译模型准备中")
+            translationState.contains("更完整翻译") -> normalizeBracketed("等待更完整翻译结果")
+            recognitionState.contains("实时") && original.isNotBlank() -> normalizeBracketed("等待更稳定语句后翻译")
+            else -> normalizeBracketed("等待翻译")
+        }
+    }
+
+    private fun pipelineTranslationPlaceholder(
+        translationState: String,
+        recognitionState: String,
+        original: String
+    ): String {
+        return when {
+            translationState.contains("先显示原文") -> normalizeBracketed("翻译尚未就绪，当前先显示原文")
+            translationState.contains("下载") -> normalizeBracketed("翻译模型下载中")
+            translationState.contains("准备") -> normalizeBracketed("翻译模型准备中")
+            translationState.contains("更完整翻译") -> normalizeBracketed("等待更完整翻译结果")
+            recognitionState.contains("实时") && original.isNotBlank() -> normalizeBracketed("等待更稳定语句后翻译")
+            else -> normalizeBracketed("暂无翻译结果")
+        }
+    }
+
+    private fun normalizeBracketed(text: String): String = "（$text）"
 }

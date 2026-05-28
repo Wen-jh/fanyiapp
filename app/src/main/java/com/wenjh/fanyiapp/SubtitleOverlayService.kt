@@ -47,8 +47,24 @@ class SubtitleOverlayService : Service() {
         const val EXTRA_DATA_INTENT = "extra_data_intent"
         const val EXTRA_ENABLE_AUDIO_DUMP = "extra_enable_audio_dump"
         const val EXTRA_AUDIO_DUMP_WAV = "extra_audio_dump_wav"
+
         private const val CHANNEL_ID = "subtitle_overlay"
         private const val NOTIFICATION_ID = 1001
+        private const val FINAL_TRANSLATION_DEBOUNCE_MS = 1200L
+        private const val IMMEDIATE_FINAL_TRANSLATION_LENGTH = 36
+
+        fun shouldApplyPolishedResult(
+            finalToken: Long,
+            sourceText: String,
+            currentSourceText: String,
+            expectedMlKitTranslation: String,
+            currentDisplayedTranslation: String,
+            latestFinalToken: Long
+        ): Boolean {
+            if (finalToken != latestFinalToken) return false
+            if (sourceText != currentSourceText) return false
+            return currentDisplayedTranslation == expectedMlKitTranslation
+        }
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -65,9 +81,11 @@ class SubtitleOverlayService : Service() {
     private var hyMtPrepareJob: Job? = null
     private var hyMtPolishJob: Job? = null
     private var audioLoopJob: Job? = null
+    private var bufferedFinalFlushJob: Job? = null
     private var audioSource: PlaybackCaptureAudioSource? = null
     private var voskRecognizer: VoskStreamingRecognizer? = null
     private var debugDumpWriter: AudioDebugDumpWriter? = null
+
     private val translationSegmenter = TranslationSegmenter()
     private val pendingTranslationCoordinator = PendingTranslationCoordinator()
 
@@ -89,6 +107,7 @@ class SubtitleOverlayService : Service() {
     private var latestDisplayedFinalMlKit: String = ""
     private var lastSubmittedTranslationText: String = ""
     private var lastSubmittedTranslationWasProvisional: Boolean = false
+    private var bufferedFinalText: String = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -103,12 +122,14 @@ class SubtitleOverlayService : Service() {
 
         enableAudioDump = intent.getBooleanExtra(EXTRA_ENABLE_AUDIO_DUMP, false)
         dumpAsWav = intent.getBooleanExtra(EXTRA_AUDIO_DUMP_WAV, true)
+
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
         val dataIntent = intent.getParcelableExtra<Intent>(EXTRA_DATA_INTENT)
         if (resultCode != 0 && dataIntent != null) {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, dataIntent)
         }
+
         showOverlay()
         serviceScope.launch { bootstrapPipeline() }
         return START_NOT_STICKY
@@ -137,14 +158,14 @@ class SubtitleOverlayService : Service() {
             else -> "不可用"
         }
         captureState = when (inputModeLabel) {
-            AudioInputMode.PLAYBACK_CAPTURE.label -> "已检测到播放捕获能力，准备建立真实 PCM 采集"
+            AudioInputMode.PLAYBACK_CAPTURE.label -> "检测到播放捕获能力，准备建立 PCM 采集"
             AudioInputMode.MICROPHONE.label -> "播放捕获不可用，准备回退到麦克风本地识别"
-            else -> "设备未通过音频输入探测"
+            else -> "设备未通过音频输入检测"
         }
         modelState = "等待本地识别模型初始化"
         recognitionState = "等待本地识别启动"
         translationState = "等待翻译模型初始化"
-        dumpState = if (enableAudioDump) "等待写入器初始化" else "未启用"
+        dumpState = if (enableAudioDump) "等待调试录音写入器初始化" else "未启用"
         pushNotification("$inputModeLabel / $captureState")
     }
 
@@ -158,6 +179,7 @@ class SubtitleOverlayService : Service() {
             captureState = "缺少录音权限"
             return
         }
+
         runCatching {
             audioSource?.stop()
             audioSource?.release()
@@ -166,7 +188,8 @@ class SubtitleOverlayService : Service() {
             val source = audioSource ?: return@onSuccess
             inputModeLabel = source.mode.label
             captureState = when {
-                playbackCaptureInitiallyAvailable && source.mode == AudioInputMode.MICROPHONE -> "播放捕获初始化失败，已切换到麦克风本地识别"
+                playbackCaptureInitiallyAvailable && source.mode == AudioInputMode.MICROPHONE ->
+                    "播放捕获初始化失败，已切换到麦克风本地识别"
                 source.mode == AudioInputMode.PLAYBACK_CAPTURE -> "播放音频捕获已就绪"
                 else -> "麦克风本地识别已就绪"
             }
@@ -179,6 +202,7 @@ class SubtitleOverlayService : Service() {
         modelState = ModelPreparationState.PREPARING.statusText
         recognitionState = "等待本地识别启动"
         renderPipeline()
+
         val result = withContext(Dispatchers.IO) { VoskModelManager().prepareModel(this@SubtitleOverlayService) }
         result.onSuccess { modelDir ->
             runCatching {
@@ -199,7 +223,7 @@ class SubtitleOverlayService : Service() {
     private suspend fun prepareTranslator() {
         isTranslatorReady = false
         translatorDownloadStatusJob?.cancel()
-        translationState = "正在检查翻译模型"
+        translationState = "正在准备日语到中文翻译模型"
         renderPipeline()
 
         val options = TranslatorOptions.Builder()
@@ -212,19 +236,19 @@ class SubtitleOverlayService : Service() {
         translator = com.google.mlkit.nl.translate.Translation.getClient(options)
 
         val startedAt = SystemClock.elapsedRealtime()
-        fun elapsedSeconds(): Long {
-            return ((SystemClock.elapsedRealtime() - startedAt) / 1000L).coerceAtLeast(0L)
-        }
+        fun elapsedSeconds(): Long = ((SystemClock.elapsedRealtime() - startedAt) / 1000L).coerceAtLeast(0L)
+
         fun startDownloadStatusTicker() {
             translatorDownloadStatusJob?.cancel()
             translatorDownloadStatusJob = serviceScope.launch {
                 while (isActive && !isTranslatorReady) {
-                    translationState = "正在下载翻译模型（已耗时 ${elapsedSeconds()}s）"
+                    translationState = "翻译模型下载中（已耗时 ${elapsedSeconds()}s）"
                     renderPipeline()
                     delay(1000)
                 }
             }
         }
+
         fun stopDownloadStatusTicker() {
             translatorDownloadStatusJob?.cancel()
             translatorDownloadStatusJob = null
@@ -236,10 +260,10 @@ class SubtitleOverlayService : Service() {
             startDownloadStatusTicker()
             translator?.downloadModelIfNeeded()?.await()
             stopDownloadStatusTicker()
-            translationState = "模型下载完成，正在初始化"
+            translationState = "翻译模型已下载，正在初始化"
             renderPipeline()
             isTranslatorReady = true
-            translationState = "翻译模型就绪"
+            translationState = "翻译模型已就绪"
         } catch (error: Throwable) {
             stopDownloadStatusTicker()
             isTranslatorReady = false
@@ -265,9 +289,7 @@ class SubtitleOverlayService : Service() {
         }
         val engine = existingEngine ?: HyMtTranslationEngine(applicationContext).also { hyMtEngine = it }
         hyMtPrepareJob = serviceScope.launch {
-            runCatching {
-                engine.prepareIfNeeded()
-            }
+            runCatching { engine.prepareIfNeeded() }
         }
     }
 
@@ -284,6 +306,7 @@ class SubtitleOverlayService : Service() {
         audioLoopJob?.cancel()
         audioLoopJob = serviceScope.launch(Dispatchers.IO) {
             val buffer = ShortArray(3200)
+
             debugDumpWriter?.close()
             debugDumpWriter = runCatching {
                 AudioDebugDumpWriter.create(
@@ -302,6 +325,7 @@ class SubtitleOverlayService : Service() {
             }.onFailure { error ->
                 dumpState = "调试录音保存失败：${error.message ?: error.javaClass.simpleName}"
             }.getOrNull()
+
             runCatching { source.start() }
                 .onFailure { error ->
                     serviceScope.launch {
@@ -312,7 +336,10 @@ class SubtitleOverlayService : Service() {
                 }
 
             serviceScope.launch {
-                captureState = if (source.mode == AudioInputMode.PLAYBACK_CAPTURE) "播放音频捕获中" else "麦克风音频采集中"
+                captureState = when (source.mode) {
+                    AudioInputMode.PLAYBACK_CAPTURE -> "播放音频捕获中"
+                    AudioInputMode.MICROPHONE -> "麦克风音频采集中"
+                }
                 recognitionState = "本地识别中（实时）"
                 renderPipeline()
             }
@@ -321,7 +348,9 @@ class SubtitleOverlayService : Service() {
                 while (isActive) {
                     val read = source.read(buffer)
                     if (read <= 0) continue
+
                     debugDumpWriter?.write(buffer, read)
+
                     val level = PlaybackCaptureAudioSource.normalizePcmLevel(buffer, read)
                     val levelHint = "音量: ${level.toInt()}%"
                     val capture = when (source.mode) {
@@ -333,24 +362,36 @@ class SubtitleOverlayService : Service() {
                         captureState = capture
                         renderPipeline(levelOverride = levelHint)
                     }
+
                     when (val event = recognizer.accept(buffer, read)) {
                         is AsrEvent.Partial -> serviceScope.launch {
-                            lastOriginalText = event.text
+                            lastOriginalText = if (bufferedFinalText.isBlank()) {
+                                event.text
+                            } else {
+                                mergeRecognizedText(bufferedFinalText, event.text)
+                            }
                             recognitionState = "本地识别中（实时）"
+                            if (bufferedFinalText.isNotBlank()) {
+                                translationState = "正在等待更完整语句"
+                                renderPipeline(levelOverride = levelHint)
+                                return@launch
+                            }
+
                             val candidate = translationSegmenter.onPartial(event.text, SystemClock.elapsedRealtime())
                             if (candidate != null) {
                                 translateRecognizedText(candidate, provisional = true)
                             } else {
-                                translationState = if (isTranslatorReady) "等待稳定分段后再翻译" else translationState
+                                if (isTranslatorReady) {
+                                    translationState = "等待更稳定语句后翻译"
+                                }
                                 renderPipeline(levelOverride = levelHint)
                             }
                         }
 
                         is AsrEvent.Final -> serviceScope.launch {
-                            lastOriginalText = event.text
                             recognitionState = "本地识别完成"
                             translationSegmenter.onFinal(event.text)?.let {
-                                translateRecognizedText(it, provisional = false)
+                                queueFinalTranslation(it, levelHint)
                             } ?: run {
                                 if (lastTranslatedText.isBlank()) {
                                     translationState = "等待下一句翻译"
@@ -370,10 +411,9 @@ class SubtitleOverlayService : Service() {
             } finally {
                 recognizer.flushFinal()?.let { finalEvent ->
                     serviceScope.launch {
-                        lastOriginalText = finalEvent.text
                         recognitionState = "本地识别完成"
                         translationSegmenter.onFinal(finalEvent.text)?.let {
-                            translateRecognizedText(it, provisional = false)
+                            queueFinalTranslation(it)
                         } ?: run {
                             if (lastTranslatedText.isBlank()) {
                                 translationState = "等待下一句翻译"
@@ -389,13 +429,54 @@ class SubtitleOverlayService : Service() {
         }
     }
 
+    private fun queueFinalTranslation(text: String, levelHintOverride: String? = null) {
+        val normalized = normalizeSubtitleText(text)
+        if (normalized.isBlank()) return
+
+        bufferedFinalText = mergeRecognizedText(bufferedFinalText, normalized)
+        lastOriginalText = bufferedFinalText
+        translationState = "正在等待更完整语句"
+        renderPipeline(levelOverride = levelHintOverride)
+
+        if (lastSubmittedTranslationWasProvisional && translatorJob?.isActive == true) {
+            translatorJob?.cancel()
+        }
+
+        bufferedFinalFlushJob?.cancel()
+        val delayMs = if (
+            endsWithSentenceBoundary(bufferedFinalText) ||
+            bufferedFinalText.length >= IMMEDIATE_FINAL_TRANSLATION_LENGTH
+        ) {
+            120L
+        } else {
+            FINAL_TRANSLATION_DEBOUNCE_MS
+        }
+        bufferedFinalFlushJob = serviceScope.launch {
+            delay(delayMs)
+            flushBufferedFinalTranslation(levelHintOverride)
+        }
+    }
+
+    private fun flushBufferedFinalTranslation(levelHintOverride: String? = null) {
+        val candidate = normalizeSubtitleText(bufferedFinalText)
+        bufferedFinalText = ""
+        bufferedFinalFlushJob = null
+        if (candidate.isBlank()) {
+            renderPipeline(levelOverride = levelHintOverride)
+            return
+        }
+        translateRecognizedText(candidate, provisional = false)
+    }
+
     private fun translateRecognizedText(text: String, provisional: Boolean) {
         val normalizedText = normalizeSubtitleText(text)
         if (normalizedText.isBlank()) {
             return
         }
         if (shouldSkipTranslation(normalizedText, provisional)) {
-            translationState = if (provisional) "等待更完整语句后再翻译" else translationState
+            if (provisional) {
+                translationState = "等待更完整语句后翻译"
+            }
             renderPipeline()
             return
         }
@@ -404,14 +485,23 @@ class SubtitleOverlayService : Service() {
         if (!isTranslatorReady || currentTranslator == null) {
             pendingTranslationCoordinator.rememberPending(normalizedText, provisional)
             translationState = "翻译器未就绪，先显示原文"
-            lastTranslatedText = ""
+            if (!provisional) {
+                lastTranslatedText = ""
+            }
             renderPipeline()
             return
         }
 
         if (pendingTranslationCoordinator.hasInFlight()) {
             pendingTranslationCoordinator.rememberPending(normalizedText, provisional)
-            translationState = if (provisional) "等待更完整语句后接力翻译" else "等待当前翻译完成后接力"
+            if (!provisional && lastSubmittedTranslationWasProvisional && translatorJob?.isActive == true) {
+                translatorJob?.cancel()
+            }
+            translationState = if (provisional) {
+                "等待更完整语句后接力翻译"
+            } else {
+                "等待当前翻译完成后接力"
+            }
             renderPipeline()
             return
         }
@@ -426,33 +516,35 @@ class SubtitleOverlayService : Service() {
         pendingTranslationCoordinator.markInFlight(normalizedText, provisional)
         lastSubmittedTranslationText = normalizedText
         lastSubmittedTranslationWasProvisional = provisional
+
         translatorJob = serviceScope.launch {
-            translationState = if (provisional) "正在低延迟翻译（预测）" else "正在翻译"
+            translationState = if (provisional) "正在预测翻译" else "正在翻译"
             renderPipeline()
             try {
-                val translated = withContext(Dispatchers.IO) { currentTranslator.translate(normalizedText).await().trim() }
+                val translated = withContext(Dispatchers.IO) {
+                    currentTranslator.translate(normalizedText).await().trim()
+                }
                 val queuedFollowUp = pendingTranslationCoordinator.peek()
                 val suppressProvisionalResult = provisional && queuedFollowUp != null &&
                     (!queuedFollowUp.provisional || queuedFollowUp.text.length >= normalizedText.length)
+
                 if (translated.isNotBlank()) {
                     if (suppressProvisionalResult) {
-                        lastTranslatedText = ""
+                        translationState = "已收到更完整语句，等待更完整翻译"
                     } else {
                         lastTranslatedText = translated
-                    }
-                    translationState = if (suppressProvisionalResult) {
-                        "已收到更完整语句，等待更完整翻译"
-                    } else if (provisional) {
-                        "低延迟翻译已更新"
-                    } else {
-                        latestDisplayedFinalSource = normalizedText
-                        latestDisplayedFinalMlKit = translated
-                        launchFinalPolish(
-                            sourceText = normalizedText,
-                            mlKitTranslation = translated,
-                            finalToken = finalToken
-                        )
-                        "翻译完成"
+                        translationState = if (provisional) {
+                            "实时翻译已更新"
+                        } else {
+                            latestDisplayedFinalSource = normalizedText
+                            latestDisplayedFinalMlKit = translated
+                            launchFinalPolish(
+                                sourceText = normalizedText,
+                                mlKitTranslation = translated,
+                                finalToken = finalToken
+                            )
+                            "翻译完成"
+                        }
                     }
                 } else {
                     translationState = "翻译完成，但结果为空"
@@ -475,17 +567,20 @@ class SubtitleOverlayService : Service() {
 
     private fun normalizeSubtitleText(text: String): String {
         return text
-            .replace('　', ' ')
+            .replace('\u3000', ' ')
             .replace("\r\n", "\n")
             .replace('\r', '\n')
             .replace(Regex("\\s+"), " ")
-            .replace(Regex("[。．]{2,}"), "。")
-            .replace(Regex("[！!]{2,}"), "！")
-            .replace(Regex("[？?]{2,}"), "？")
+            .replace(Regex("[。？！]{2,}"), "。")
+            .replace(Regex("[!?！？]{2,}"), "！")
+            .replace(Regex("[,.，、]{2,}"), "，")
             .trim()
     }
 
     private fun shouldSkipTranslation(normalizedText: String, provisional: Boolean): Boolean {
+        if (bufferedFinalText.isNotBlank() && provisional) {
+            return true
+        }
         if (!provisional) {
             return false
         }
@@ -502,7 +597,7 @@ class SubtitleOverlayService : Service() {
         if (!normalizedText.startsWith(lastSubmittedTranslationText)) {
             return false
         }
-        return normalizedText.length - lastSubmittedTranslationText.length < 2
+        return normalizedText.length - lastSubmittedTranslationText.length < 5
     }
 
     private fun launchFinalPolish(sourceText: String, mlKitTranslation: String, finalToken: Long) {
@@ -532,7 +627,8 @@ class SubtitleOverlayService : Service() {
                         sourceText = sourceText,
                         currentSourceText = latestDisplayedFinalSource,
                         expectedMlKitTranslation = mlKitTranslation,
-                        currentDisplayedTranslation = lastTranslatedText
+                        currentDisplayedTranslation = lastTranslatedText,
+                        latestFinalToken = latestFinalToken
                     )) {
                     return@onSuccess
                 }
@@ -542,12 +638,51 @@ class SubtitleOverlayService : Service() {
                     renderPipeline()
                 }
             }.onFailure {
-                if (finalToken == latestFinalToken && sourceText == latestDisplayedFinalSource && lastTranslatedText == mlKitTranslation) {
+                if (finalToken == latestFinalToken &&
+                    sourceText == latestDisplayedFinalSource &&
+                    lastTranslatedText == mlKitTranslation
+                ) {
                     translationState = "翻译完成"
                     renderPipeline()
                 }
             }
         }
+    }
+
+    private fun mergeRecognizedText(previous: String, next: String): String {
+        val left = normalizeSubtitleText(previous)
+        val right = normalizeSubtitleText(next)
+        if (left.isBlank()) return right
+        if (right.isBlank()) return left
+        if (right == left) return left
+        if (right.startsWith(left)) return right
+        if (left.endsWith(right)) return left
+        return if (shouldAppendSpaceBetween(left.last(), right.first())) {
+            "$left $right"
+        } else {
+            left + right
+        }
+    }
+
+    private fun endsWithSentenceBoundary(text: String): Boolean {
+        return text.endsWith("。") || text.endsWith("！") || text.endsWith("？") ||
+            text.endsWith(".") || text.endsWith("!") || text.endsWith("?")
+    }
+
+    private fun shouldAppendSpaceBetween(previousChar: Char, nextChar: Char): Boolean {
+        if (previousChar.isWhitespace() || nextChar.isWhitespace()) return false
+        if (isCjk(previousChar) || isCjk(nextChar)) return false
+        return true
+    }
+
+    private fun isCjk(character: Char): Boolean {
+        val block = Character.UnicodeBlock.of(character)
+        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
+            block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
+            block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B ||
+            block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
+            block == Character.UnicodeBlock.HIRAGANA ||
+            block == Character.UnicodeBlock.KATAKANA
     }
 
     private fun showOverlay() {
@@ -695,6 +830,7 @@ class SubtitleOverlayService : Service() {
         translatorDownloadStatusJob?.cancel()
         hyMtPrepareJob?.cancel()
         hyMtPolishJob?.cancel()
+        bufferedFinalFlushJob?.cancel()
         debugDumpWriter?.close()
         debugDumpWriter = null
         voskRecognizer?.close()
@@ -715,18 +851,5 @@ class SubtitleOverlayService : Service() {
         windowManager = null
         serviceScope.cancel()
         super.onDestroy()
-    }
-
-    private fun shouldApplyPolishedResult(
-        finalToken: Long,
-        sourceText: String,
-        currentSourceText: String,
-        expectedMlKitTranslation: String,
-        currentDisplayedTranslation: String,
-        latestFinalToken: Long = this.latestFinalToken
-    ): Boolean {
-        if (finalToken != latestFinalToken) return false
-        if (sourceText != currentSourceText) return false
-        return currentDisplayedTranslation == expectedMlKitTranslation
     }
 }

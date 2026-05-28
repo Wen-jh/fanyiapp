@@ -1,9 +1,9 @@
 package com.wenjh.fanyiapp
 
 class TranslationSegmenter(
-    private val minPartialLength: Int = 8,
-    private val stableWindowMs: Long = 800,
-    private val minMeaningfulGrowthChars: Int = 2
+    private val minPartialLength: Int = 14,
+    private val stableWindowMs: Long = 1400,
+    private val minMeaningfulGrowthChars: Int = 5
 ) {
     private var lastPartial: String = ""
     private var lastPartialSinceMs: Long = 0L
@@ -14,7 +14,8 @@ class TranslationSegmenter(
         val normalized = text.trim()
         if (normalized.isBlank()) return null
 
-        val punctuated = normalized.endsWith("。") || normalized.endsWith("！") || normalized.endsWith("？")
+        val punctuated = normalized.endsWith("。") || normalized.endsWith("！") || normalized.endsWith("？") ||
+            normalized.endsWith(".") || normalized.endsWith("!") || normalized.endsWith("?")
         val stable = nowMs - lastPartialSinceMs >= stableWindowMs
         val grewFromPrevious = lastPartial.isNotBlank() && normalized.startsWith(lastPartial) && normalized != lastPartial
 
@@ -22,7 +23,9 @@ class TranslationSegmenter(
             hasDivergedSinceLastSubmission = true
         }
 
-        if (normalized == lastSubmitted && !hasDivergedSinceLastSubmission) return null
+        if (normalized == lastSubmitted && !hasDivergedSinceLastSubmission) {
+            return null
+        }
 
         if (punctuated) {
             lastPartial = normalized
@@ -34,7 +37,9 @@ class TranslationSegmenter(
 
         if (normalized != lastPartial) {
             val shouldFlushGrowingPartial =
-                grewFromPrevious && stable && normalized.length >= minPartialLength &&
+                grewFromPrevious &&
+                    stable &&
+                    normalized.length >= minPartialLength &&
                     hasMeaningfulGrowthSinceLastSubmission(normalized)
             lastPartial = normalized
             lastPartialSinceMs = nowMs
@@ -47,7 +52,11 @@ class TranslationSegmenter(
             }
         }
 
-        return if (stable && normalized.length >= minPartialLength && hasMeaningfulGrowthSinceLastSubmission(normalized)) {
+        return if (
+            stable &&
+            normalized.length >= minPartialLength &&
+            hasMeaningfulGrowthSinceLastSubmission(normalized)
+        ) {
             lastSubmitted = normalized
             hasDivergedSinceLastSubmission = false
             normalized
