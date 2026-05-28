@@ -10,8 +10,4 @@ object OverlayUiModeDecider {
             normalizedState.contains("准备")
         return hasReadyState && !hasBlockingState && translated.isNotBlank()
     }
-
-    fun detailsToggleLabel(showDetails: Boolean): String {
-        return if (showDetails) "隐藏详情" else "显示详情"
-    }
 }

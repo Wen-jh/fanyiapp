@@ -60,7 +60,7 @@ class SubtitleControlActivity : AppCompatActivity() {
             showStatus("服务已停止")
         }
 
-        showStatus("准备就绪：先授权悬浮窗，再点击开始实时字幕翻译。")
+        showStatus("准备就绪：先授权悬浮窗，再点击开始实时字幕翻译。悬浮窗仅显示识别与翻译结果，控制和链路状态保留在本页。")
     }
 
     private fun ensurePermissionsAndStart() {
@@ -101,7 +101,7 @@ class SubtitleControlActivity : AppCompatActivity() {
             putExtra(SubtitleOverlayService.EXTRA_AUDIO_DUMP_WAV, BuildConfig.DEFAULT_AUDIO_DUMP_WAV)
         }
         ContextCompat.startForegroundService(this, serviceIntent)
-        showStatus("服务启动中：悬浮窗将展示播放捕获、本地识别、翻译和音量链路状态")
+        showStatus("服务启动中：悬浮窗将只显示识别字幕和翻译字幕，权限与运行状态请在本页查看。")
     }
 
     private fun showStatus(message: String) {

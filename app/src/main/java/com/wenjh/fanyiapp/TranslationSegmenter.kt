@@ -2,7 +2,8 @@ package com.wenjh.fanyiapp
 
 class TranslationSegmenter(
     private val minPartialLength: Int = 8,
-    private val stableWindowMs: Long = 800
+    private val stableWindowMs: Long = 800,
+    private val minMeaningfulGrowthChars: Int = 2
 ) {
     private var lastPartial: String = ""
     private var lastPartialSinceMs: Long = 0L
@@ -33,7 +34,8 @@ class TranslationSegmenter(
 
         if (normalized != lastPartial) {
             val shouldFlushGrowingPartial =
-                grewFromPrevious && stable && normalized.length >= minPartialLength
+                grewFromPrevious && stable && normalized.length >= minPartialLength &&
+                    hasMeaningfulGrowthSinceLastSubmission(normalized)
             lastPartial = normalized
             lastPartialSinceMs = nowMs
             return if (shouldFlushGrowingPartial) {
@@ -45,7 +47,7 @@ class TranslationSegmenter(
             }
         }
 
-        return if (stable && normalized.length >= minPartialLength) {
+        return if (stable && normalized.length >= minPartialLength && hasMeaningfulGrowthSinceLastSubmission(normalized)) {
             lastSubmitted = normalized
             hasDivergedSinceLastSubmission = false
             normalized
@@ -62,5 +64,12 @@ class TranslationSegmenter(
         lastPartial = normalized
         hasDivergedSinceLastSubmission = false
         return normalized
+    }
+
+    private fun hasMeaningfulGrowthSinceLastSubmission(normalized: String): Boolean {
+        if (lastSubmitted.isBlank()) return true
+        if (normalized == lastSubmitted) return hasDivergedSinceLastSubmission
+        if (!normalized.startsWith(lastSubmitted)) return true
+        return normalized.length - lastSubmitted.length >= minMeaningfulGrowthChars
     }
 }

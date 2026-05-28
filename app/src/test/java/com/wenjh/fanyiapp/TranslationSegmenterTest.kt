@@ -48,6 +48,25 @@ class TranslationSegmenterTest {
     }
 
     @Test
+    fun repeatedSmallPrefixGrowth_doesNotFlushAgain() {
+        val segmenter = TranslationSegmenter(minPartialLength = 3, stableWindowMs = 500)
+
+        assertNull(segmenter.onPartial("ありがとう", 1000))
+        assertEquals("ありがとう", segmenter.onPartial("ありがとう", 1600))
+        assertNull(segmenter.onPartial("ありがとうご", 2300))
+    }
+
+    @Test
+    fun meaningfulPrefixGrowth_stillFlushesAfterThreshold() {
+        val segmenter = TranslationSegmenter(minPartialLength = 3, stableWindowMs = 500)
+
+        assertNull(segmenter.onPartial("ありがとう", 1000))
+        assertEquals("ありがとう", segmenter.onPartial("ありがとう", 1600))
+        assertNull(segmenter.onPartial("ありがとうございます", 2200))
+        assertEquals("ありがとうございます", segmenter.onPartial("ありがとうございます", 2800))
+    }
+
+    @Test
     fun flushFinalImmediately() {
         val segmenter = TranslationSegmenter()
         assertEquals("おはようございます", segmenter.onFinal("おはようございます"))

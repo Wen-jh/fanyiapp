@@ -1,7 +1,5 @@
 <resources>
     <string name="app_name">灵译字幕</string>
-    <string name="overlay_show_details">显示详情</string>
-    <string name="overlay_hide_details">隐藏详情</string>
     <string name="image_translation_title">拍照识图翻译</string>
     <string name="image_translation_subtitle">支持拍照或从相册导入图片，自动识别文字，并优先使用内置 Hy-MT 离线模型做多语言翻译。</string>
     <string name="text_translation_title">直接输入翻译</string>
@@ -10,7 +8,7 @@
     <string name="text_translation_action">开始翻译</string>
     <string name="text_translation_swap">切换</string>
     <string name="subtitle_control_title">实时字幕翻译</string>
-    <string name="subtitle_control_subtitle">采集播放音频或麦克风内容，持续显示识别与翻译结果。</string>
+    <string name="subtitle_control_subtitle">采集播放音频或麦克风内容，悬浮窗只保留识别与翻译结果，权限与控制操作集中在当前页面。</string>
     <string name="main_title">翻译</string>
     <string name="main_subtitle">随时随地，畅译无阻。当前提供直接输入翻译、拍照翻译、实时翻译字幕三项能力。</string>
     <string name="main_input_card_title">请输入需要翻译的文字</string>

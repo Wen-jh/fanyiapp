@@ -26,16 +26,6 @@ class OverlayUiModeDeciderTest {
     }
 
     @Test
-    fun detailsToggleLabel_returnsShowDetailsWhenHidden() {
-        assertTrue(OverlayUiModeDecider.detailsToggleLabel(showDetails = false).contains("显示详情"))
-    }
-
-    @Test
-    fun detailsToggleLabel_returnsHideDetailsWhenVisible() {
-        assertTrue(OverlayUiModeDecider.detailsToggleLabel(showDetails = true).contains("隐藏详情"))
-    }
-
-    @Test
     fun shouldAutoCollapse_returnsFalseWhileTranslatorStillDownloading() {
         assertFalse(
             OverlayUiModeDecider.shouldAutoCollapse(

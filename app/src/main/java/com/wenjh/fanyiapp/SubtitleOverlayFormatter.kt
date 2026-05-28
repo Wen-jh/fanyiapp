@@ -27,6 +27,31 @@ object SubtitleOverlayFormatter {
         ).joinToString("\n")
     }
 
+    fun composeOverlaySubtitle(
+        original: String,
+        translated: String,
+        translationState: String,
+        recognitionState: String,
+        originalLabel: String = "识别",
+        translatedLabel: String = "翻译"
+    ): String {
+        val safeOriginal = original.ifBlank { "（等待识别）" }
+        val safeTranslated = translated.ifBlank {
+            when {
+                translationState.contains("先显示原文") -> safeOriginal
+                translationState.contains("下载中") -> "（翻译模型下载中）"
+                translationState.contains("正在准备") -> "（翻译模型准备中）"
+                translationState.contains("等待更完整翻译") -> "（等待更完整翻译结果）"
+                recognitionState.contains("实时") && original.isNotBlank() -> "（等待更稳定语句后翻译）"
+                else -> "（等待翻译）"
+            }
+        }
+        return listOf(
+            "${originalLabel}：$safeOriginal",
+            "${translatedLabel}：$safeTranslated"
+        ).joinToString("\n")
+    }
+
     fun composePipeline(
         modeLabel: String,
         captureState: String,
@@ -37,7 +62,6 @@ object SubtitleOverlayFormatter {
         original: String,
         translated: String,
         levelHint: String,
-        showDetails: Boolean = true,
         originalLabel: String = "日语",
         translatedLabel: String = "中文"
     ): String {
@@ -51,13 +75,6 @@ object SubtitleOverlayFormatter {
                 recognitionState.contains("实时") && original.isNotBlank() -> "（等待更稳定语句后翻译）"
                 else -> "（暂无翻译结果）"
             }
-        }
-
-        if (!showDetails) {
-            return listOf(
-                "${originalLabel}：$safeOriginal",
-                "${translatedLabel}：$safeTranslated"
-            ).joinToString("\n")
         }
 
         val safeLevelHint = levelHint.ifBlank { "音量: 未知" }

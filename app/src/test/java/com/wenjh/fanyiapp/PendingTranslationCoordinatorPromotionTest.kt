@@ -64,14 +64,28 @@ class PendingTranslationCoordinatorPromotionTest {
     }
 
     @Test
-    fun sameLengthFinalFollowUpStillSuppressedWhenQueued() {
+    fun longerProvisionalPrefixReplacesShorterProvisionalPending() {
         val coordinator = PendingTranslationCoordinator()
-        coordinator.markInFlight("ありがとう", provisional = true)
-        coordinator.rememberPending("さようなら", provisional = false)
+
+        coordinator.rememberPending("ありが", provisional = true)
+        coordinator.rememberPending("ありがとう", provisional = true)
 
         assertEquals(
-            PendingTranslationRequest("さようなら", false),
-            coordinator.consumeReadyAfter("ありがとう")
+            PendingTranslationRequest("ありがとう", true),
+            coordinator.consumeReady()
+        )
+    }
+
+    @Test
+    fun shorterProvisionalPrefixDoesNotReplaceLongerPending() {
+        val coordinator = PendingTranslationCoordinator()
+
+        coordinator.rememberPending("ありがとうございます", provisional = true)
+        coordinator.rememberPending("ありがとう", provisional = true)
+
+        assertEquals(
+            PendingTranslationRequest("ありがとうございます", true),
+            coordinator.consumeReady()
         )
     }
 }

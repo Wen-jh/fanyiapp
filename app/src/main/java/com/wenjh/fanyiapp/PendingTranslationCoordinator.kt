@@ -79,6 +79,9 @@ class PendingTranslationCoordinator {
         return when {
             !candidate.provisional && current.provisional -> true
             candidate.provisional && !current.provisional -> false
+            candidate.text == current.text -> true
+            candidate.text.startsWith(current.text) -> true
+            current.text.startsWith(candidate.text) -> false
             candidate.text.length > current.text.length -> true
             candidate.text.length < current.text.length -> false
             else -> true
