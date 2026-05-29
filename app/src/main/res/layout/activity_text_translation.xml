@@ -2,38 +2,174 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/surface_background"
+    android:background="@color/home_background"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingStart="24dp"
+        android:paddingTop="28dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="32dp">
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/text_translation_title"
-            android:textColor="@color/text_primary"
-            android:textSize="28sp"
+            android:textColor="@color/home_text_primary"
+            android:textSize="32sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:layout_marginBottom="18dp"
+            android:layout_marginBottom="22dp"
+            android:lineSpacingExtra="4dp"
             android:text="@string/text_translation_subtitle"
-            android:textColor="@color/text_secondary"
+            android:textColor="@color/home_text_secondary"
             android:textSize="15sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/sourceLanguageChip"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_home_chip"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp">
+
+                <TextView
+                    android:id="@+id/sourceLanguageText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/home_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_marginStart="6dp"
+                    android:src="@drawable/ic_home_chevron_down" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/swapLanguageButton"
+                android:layout_width="56dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="@string/text_translation_swap"
+                android:padding="12dp"
+                android:src="@drawable/ic_home_swap" />
+
+            <LinearLayout
+                android:id="@+id/targetLanguageChip"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_home_chip"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp">
+
+                <TextView
+                    android:id="@+id/targetLanguageText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/home_text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_marginStart="6dp"
+                    android:src="@drawable/ic_home_chevron_down" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/bg_home_input"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/text_translation_input_panel_title"
+                android:textColor="@color/home_text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/inputEditText"
+                android:layout_width="match_parent"
+                android:layout_height="220dp"
+                android:layout_marginTop="14dp"
+                android:background="@android:color/transparent"
+                android:gravity="top|start"
+                android:hint="@string/text_translation_input_hint"
+                android:inputType="textMultiLine|textCapSentences"
+                android:padding="0dp"
+                android:textColor="@color/home_text_primary"
+                android:textColorHint="@color/home_text_hint"
+                android:textSize="18sp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="14dp"
+                android:background="@color/home_divider" />
+
+            <Button
+                android:id="@+id/translateButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_gravity="center_horizontal"
+                android:background="@drawable/bg_home_chip"
+                android:minWidth="144dp"
+                android:paddingStart="28dp"
+                android:paddingEnd="28dp"
+                android:text="@string/text_translation_action"
+                android:textAllCaps="false"
+                android:textColor="@color/home_text_primary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:layout_marginBottom="14dp"
-            android:background="@android:color/white"
-            android:elevation="2dp"
+            android:background="@drawable/bg_feature_large"
             android:orientation="vertical"
             android:padding="18dp">
 
@@ -41,7 +177,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/image_model_label"
-                android:textColor="@color/text_primary"
+                android:textColor="@color/home_text_primary"
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
@@ -50,7 +186,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:textColor="@color/text_secondary"
+                android:lineSpacingExtra="4dp"
+                android:textColor="@color/home_text_secondary"
                 android:textSize="14sp" />
 
             <ProgressBar
@@ -59,85 +196,15 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:max="100" />
+                android:max="100"
+                android:progressTint="@color/home_border" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="14dp"
-            android:background="@android:color/white"
-            android:elevation="2dp"
-            android:orientation="vertical"
-            android:padding="18dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/image_language_label"
-                android:textColor="@color/text_primary"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:weightSum="5">
-
-                <Spinner
-                    android:id="@+id/sourceLanguageSpinner"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="2" />
-
-                <Button
-                    android:id="@+id/swapLanguageButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_marginEnd="8dp"
-                    android:layout_weight="1"
-                    android:text="@string/text_translation_swap"
-                    android:textAllCaps="false" />
-
-                <Spinner
-                    android:id="@+id/targetLanguageSpinner"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="2" />
-            </LinearLayout>
-
-            <EditText
-                android:id="@+id/inputEditText"
-                android:layout_width="match_parent"
-                android:layout_height="180dp"
-                android:layout_marginTop="14dp"
-                android:background="@color/surface_background"
-                android:gravity="top|start"
-                android:hint="@string/text_translation_input_hint"
-                android:inputType="textMultiLine|textCapSentences"
-                android:padding="14dp"
-                android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_secondary" />
-
-            <Button
-                android:id="@+id/translateButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="@string/text_translation_action"
-                android:textAllCaps="false" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
-            android:background="@android:color/white"
-            android:elevation="2dp"
+            android:background="@drawable/bg_feature_large"
             android:orientation="vertical"
             android:padding="18dp">
 
@@ -145,7 +212,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/image_translated_label"
-                android:textColor="@color/text_primary"
+                android:textColor="@color/home_text_primary"
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
@@ -153,31 +220,40 @@
                 android:id="@+id/resultText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
                 android:minHeight="120dp"
-                android:background="@color/surface_background"
+                android:background="@drawable/bg_language_option"
+                android:lineSpacingExtra="5dp"
                 android:padding="14dp"
-                android:textColor="@color/text_primary"
+                android:textColor="@color/home_text_primary"
                 android:textIsSelectable="true"
-                android:textSize="15sp" />
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_feature_large"
+            android:orientation="vertical"
+            android:padding="18dp">
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
                 android:text="@string/image_status_label"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp"
+                android:textColor="@color/home_text_primary"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/statusText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@color/surface_background"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_language_option"
+                android:lineSpacingExtra="5dp"
                 android:padding="14dp"
-                android:textColor="@color/text_secondary"
+                android:textColor="@color/home_text_secondary"
                 android:textSize="14sp" />
         </LinearLayout>
 

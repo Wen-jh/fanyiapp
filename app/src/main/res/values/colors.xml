@@ -17,6 +17,10 @@
     <color name="home_icon_purple">#684CFF</color>
     <color name="home_icon_cyan">#11B7EA</color>
     <color name="home_icon_pale">#9DC9EF</color>
+    <color name="home_text_primary">#F5F7FA</color>
+    <color name="home_text_secondary">#A9B0BC</color>
+    <color name="home_text_hint">#6B7280</color>
+    <color name="home_divider">#2A2A2A</color>
     <color name="surface_background">#F6F7FB</color>
     <color name="surface_card">#FFFFFFFF</color>
     <color name="text_primary">#111827</color>

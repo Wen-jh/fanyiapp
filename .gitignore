@@ -9,3 +9,7 @@ captures/
 .cxx/
 _artifacts/
 app/src/main/assets/hy_mt/*
+.gradle/
+gradle/
+.claude/
+.gradle-local/
