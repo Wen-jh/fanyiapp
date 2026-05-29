@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.wenjh.fanyiapp"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.wenjh.fanyiapp"
         minSdk = 29
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 4
         versionName = "1.3.0"
 

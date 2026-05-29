@@ -14,6 +14,21 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
     @Volatile
     private var state: EngineState = EngineState.Idle
 
+    internal data class TranslationSegment(
+        val text: String,
+        val breakType: SegmentBreakType
+    )
+
+    internal data class TranslatedSegment(
+        val text: String,
+        val breakType: SegmentBreakType
+    )
+
+    internal enum class SegmentBreakType {
+        PARAGRAPH,
+        CONTINUATION
+    }
+
     override suspend fun prepareIfNeeded(onProgress: ((PreparationProgress) -> Unit)?): PreparationResult {
         state = EngineState.Preparing("正在检查 Hy-MT 离线模型", null)
         val prepared = modelManager.prepareIfNeeded(onProgress)
@@ -104,21 +119,6 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
     }
 
     companion object {
-        internal data class TranslationSegment(
-            val text: String,
-            val breakType: SegmentBreakType
-        )
-
-        internal data class TranslatedSegment(
-            val text: String,
-            val breakType: SegmentBreakType
-        )
-
-        internal enum class SegmentBreakType {
-            PARAGRAPH,
-            CONTINUATION
-        }
-
         internal fun finalizeTranslationResult(
             recognizedText: String,
             cleanedOutput: String,

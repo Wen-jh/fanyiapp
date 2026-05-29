@@ -135,21 +135,27 @@ class MainActivity : AppCompatActivity() {
         titleRow.addView(cancel, LinearLayout.LayoutParams(0, dp(48), 1f))
         titleRow.addView(title, LinearLayout.LayoutParams(0, dp(48), 1f))
         titleRow.addView(done, LinearLayout.LayoutParams(0, dp(48), 1f))
-        root.addView(titleRow, LinearLayout.LayoutParams.MATCH_PARENT, dp(48))
+        root.addView(titleRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)))
 
         val switchRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(26), 0, dp(24))
         }
-        root.addView(switchRow, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        root.addView(
+            switchRow,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        )
 
         val sideLabel = TextView(this).apply {
             setTextColor(Color.parseColor("#A1A1AA"))
             textSize = 16f
             setPadding(dp(22), 0, 0, dp(12))
         }
-        root.addView(sideLabel, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        root.addView(
+            sideLabel,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        )
 
         val listContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -159,7 +165,10 @@ class MainActivity : AppCompatActivity() {
         val scroll = ScrollView(this).apply {
             addView(listContainer)
         }
-        root.addView(scroll, LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        )
 
         fun render() {
             switchRow.removeAllViews()
