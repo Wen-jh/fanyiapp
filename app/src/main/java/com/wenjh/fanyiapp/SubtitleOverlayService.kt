@@ -50,8 +50,8 @@ class SubtitleOverlayService : Service() {
 
         private const val CHANNEL_ID = "subtitle_overlay"
         private const val NOTIFICATION_ID = 1001
-        private const val FINAL_TRANSLATION_DEBOUNCE_MS = 1200L
-        private const val IMMEDIATE_FINAL_TRANSLATION_LENGTH = 36
+        private const val FINAL_TRANSLATION_DEBOUNCE_MS = 100L
+        private const val IMMEDIATE_FINAL_TRANSLATION_LENGTH = 20
 
         fun shouldApplyPolishedResult(
             finalToken: Long,
@@ -88,6 +88,8 @@ class SubtitleOverlayService : Service() {
 
     private val translationSegmenter = TranslationSegmenter()
     private val pendingTranslationCoordinator = PendingTranslationCoordinator()
+    private var translationPipeline: IncrementalTranslationPipeline? = null
+    private val smoothRenderer = SmoothSubtitleRenderer()
 
     private var inputModeLabel: String = "检测中"
     private var playbackCaptureInitiallyAvailable: Boolean = false
@@ -271,12 +273,35 @@ class SubtitleOverlayService : Service() {
         }
 
         if (isTranslatorReady) {
+            setupTranslationPipeline()
             pendingTranslationCoordinator.consumeReady()?.let { pending ->
                 translateRecognizedText(pending.text, pending.provisional)
                 return
             }
         }
         renderPipeline()
+    }
+
+    private fun setupTranslationPipeline() {
+        val currentTranslator = translator ?: return
+        translationPipeline?.release()
+        smoothRenderer.reset()
+        translationPipeline = IncrementalTranslationPipeline(currentTranslator).apply {
+            onTranslationUpdate = { source, translated, isPartial ->
+                serviceScope.launch {
+                    if (isPartial) {
+                        smoothRenderer.onPartialUpdate(source, translated)
+                    } else {
+                        smoothRenderer.onFinalUpdate(source, translated)
+                    }
+                    val (displayOrig, displayTrans) = smoothRenderer.getDisplayText()
+                    lastOriginalText = displayOrig
+                    lastTranslatedText = displayTrans
+                    translationState = if (isPartial) "实时翻译中" else "翻译完成"
+                    renderPipeline()
+                }
+            }
+        }
     }
 
     private fun ensureHyMtPreparation() {
@@ -371,6 +396,15 @@ class SubtitleOverlayService : Service() {
                                 mergeRecognizedText(bufferedFinalText, event.text)
                             }
                             recognitionState = "本地识别中（实时）"
+
+                            // 新管道：直接提交 partial 到增量翻译
+                            if (isTranslatorReady && translationPipeline != null) {
+                                translationPipeline?.submitPartial(lastOriginalText)
+                                translationState = "实时翻译中"
+                                renderPipeline(levelOverride = levelHint)
+                                return@launch
+                            }
+
                             if (bufferedFinalText.isNotBlank()) {
                                 translationState = "正在等待更完整语句"
                                 renderPipeline(levelOverride = levelHint)
@@ -390,6 +424,14 @@ class SubtitleOverlayService : Service() {
 
                         is AsrEvent.Final -> serviceScope.launch {
                             recognitionState = "本地识别完成"
+
+                            // 新管道：直接提交 final 到增量翻译
+                            if (isTranslatorReady && translationPipeline != null) {
+                                translationPipeline?.submitFinal(event.text)
+                                renderPipeline(levelOverride = levelHint)
+                                return@launch
+                            }
+
                             translationSegmenter.onFinal(event.text)?.let {
                                 queueFinalTranslation(it, levelHint)
                             } ?: run {
@@ -831,6 +873,8 @@ class SubtitleOverlayService : Service() {
         hyMtPrepareJob?.cancel()
         hyMtPolishJob?.cancel()
         bufferedFinalFlushJob?.cancel()
+        translationPipeline?.release()
+        translationPipeline = null
         debugDumpWriter?.close()
         debugDumpWriter = null
         voskRecognizer?.close()

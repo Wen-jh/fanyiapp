@@ -43,8 +43,8 @@ class TranslationSegmenterTest {
     fun defaultSegmenter_waitsLongerBeforeFlushingRoughRealtimePartial() {
         val segmenter = TranslationSegmenter()
         assertNull(segmenter.onPartial("ありがとうございました", 1000))
-        assertNull(segmenter.onPartial("ありがとうございました", 2200))
-        assertEquals("ありがとうございました", segmenter.onPartial("ありがとうございました", 2500))
+        assertNull(segmenter.onPartial("ありがとうございました", 1150))
+        assertEquals("ありがとうございました", segmenter.onPartial("ありがとうございました", 1300))
     }
 
     @Test

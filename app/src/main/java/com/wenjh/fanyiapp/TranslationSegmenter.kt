@@ -1,9 +1,9 @@
 package com.wenjh.fanyiapp
 
 class TranslationSegmenter(
-    private val minPartialLength: Int = 14,
-    private val stableWindowMs: Long = 1400,
-    private val minMeaningfulGrowthChars: Int = 5
+    private val minPartialLength: Int = 8,
+    private val stableWindowMs: Long = 200,
+    private val minMeaningfulGrowthChars: Int = 3
 ) {
     private var lastPartial: String = ""
     private var lastPartialSinceMs: Long = 0L
