@@ -225,7 +225,33 @@ class SubtitleOverlayService : Service() {
     private suspend fun prepareTranslator() {
         isTranslatorReady = false
         translatorDownloadStatusJob?.cancel()
-        translationState = "正在准备日语到中文翻译模型"
+        translationState = "正在准备翻译引擎"
+        renderPipeline()
+
+        // 优先尝试 Hy-MT 离线翻译（不需要网络）
+        val hyMtResult = withContext(Dispatchers.IO) {
+            runCatching {
+                val engine = HyMtTranslationEngine(applicationContext)
+                val result = engine.prepareIfNeeded()
+                if (result.ready) {
+                    hyMtEngine = engine
+                    true
+                } else {
+                    false
+                }
+            }.getOrDefault(false)
+        }
+
+        if (hyMtResult) {
+            isTranslatorReady = true
+            translationState = "Hy-MT 离线翻译已就绪"
+            renderPipeline()
+            setupHyMtPipeline()
+            return
+        }
+
+        // Hy-MT 不可用，回退到 ML Kit
+        translationState = "Hy-MT 不可用，正在准备 ML Kit 翻译模型"
         renderPipeline()
 
         val options = TranslatorOptions.Builder()
@@ -265,7 +291,7 @@ class SubtitleOverlayService : Service() {
             translationState = "翻译模型已下载，正在初始化"
             renderPipeline()
             isTranslatorReady = true
-            translationState = "翻译模型已就绪"
+            translationState = "ML Kit 翻译已就绪"
         } catch (error: Throwable) {
             stopDownloadStatusTicker()
             isTranslatorReady = false
@@ -273,7 +299,7 @@ class SubtitleOverlayService : Service() {
         }
 
         if (isTranslatorReady) {
-            setupTranslationPipeline()
+            setupMlKitPipeline()
             pendingTranslationCoordinator.consumeReady()?.let { pending ->
                 translateRecognizedText(pending.text, pending.provisional)
                 return
@@ -282,11 +308,20 @@ class SubtitleOverlayService : Service() {
         renderPipeline()
     }
 
-    private fun setupTranslationPipeline() {
-        val currentTranslator = translator ?: return
+    private fun setupHyMtPipeline() {
+        val engine = hyMtEngine ?: return
         translationPipeline?.release()
         smoothRenderer.reset()
-        translationPipeline = IncrementalTranslationPipeline(currentTranslator).apply {
+        translationPipeline = IncrementalTranslationPipeline(
+            translateFn = { text ->
+                val result = engine.translate(
+                    text = text,
+                    sourceLanguage = "Japanese",
+                    targetLanguage = "Chinese"
+                )
+                result.text
+            }
+        ).apply {
             onTranslationUpdate = { source, translated, isPartial ->
                 serviceScope.launch {
                     if (isPartial) {
@@ -297,7 +332,33 @@ class SubtitleOverlayService : Service() {
                     val (displayOrig, displayTrans) = smoothRenderer.getDisplayText()
                     lastOriginalText = displayOrig
                     lastTranslatedText = displayTrans
-                    translationState = if (isPartial) "实时翻译中" else "翻译完成"
+                    translationState = if (isPartial) "实时翻译中(Hy-MT)" else "翻译完成(Hy-MT)"
+                    renderPipeline()
+                }
+            }
+        }
+    }
+
+    private fun setupMlKitPipeline() {
+        val currentTranslator = translator ?: return
+        translationPipeline?.release()
+        smoothRenderer.reset()
+        translationPipeline = IncrementalTranslationPipeline(
+            translateFn = { text ->
+                currentTranslator.translate(text).await().trim()
+            }
+        ).apply {
+            onTranslationUpdate = { source, translated, isPartial ->
+                serviceScope.launch {
+                    if (isPartial) {
+                        smoothRenderer.onPartialUpdate(source, translated)
+                    } else {
+                        smoothRenderer.onFinalUpdate(source, translated)
+                    }
+                    val (displayOrig, displayTrans) = smoothRenderer.getDisplayText()
+                    lastOriginalText = displayOrig
+                    lastTranslatedText = displayTrans
+                    translationState = if (isPartial) "实时翻译中(ML Kit)" else "翻译完成(ML Kit)"
                     renderPipeline()
                 }
             }

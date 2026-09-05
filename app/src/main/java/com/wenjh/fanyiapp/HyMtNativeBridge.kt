@@ -37,20 +37,12 @@ object HyMtNativeBridge {
 
     @Synchronized
     fun translate(prompt: String, maxTokens: Int, temperature: Float): String {
-        val path = modelPath ?: error("Hy-MT 模型路径未初始化")
-        val libDir = nativeLibDir ?: error("Hy-MT native 库路径未初始化")
-        val inferenceEngine = engine ?: InferenceEngineImpl(libDir).also { engine = it }
+        val inferenceEngine = engine ?: error("Hy-MT 引擎未初始化，请先调用 initialize()")
+        if (!ready) error("Hy-MT 引擎未就绪")
 
-        runCatching {
-            inferenceEngine.unloadModel()
-        }
-        inferenceEngine.loadModel(path)
-        inferenceEngine.prepareModel()
-        inferenceEngine.setSystemPrompt(SYSTEM_PROMPT)
+        // 模型已常驻内存，只需设置 prompt 并生成
         inferenceEngine.processPrompt(prompt, maxTokens)
-        val output = inferenceEngine.generateAllTokens()
-        ready = true
-        return output
+        return inferenceEngine.generateAllTokens()
     }
 
     @Synchronized

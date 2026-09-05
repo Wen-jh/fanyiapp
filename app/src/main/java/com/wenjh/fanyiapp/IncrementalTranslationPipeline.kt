@@ -1,6 +1,5 @@
 package com.wenjh.fanyiapp
 
-import com.google.mlkit.nl.translate.Translator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -9,10 +8,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 
+/**
+ * 增量翻译管道 — 支持任意翻译后端（ML Kit / Hy-MT / 其他）
+ * 通过 translateFn 注入翻译能力，解耦具体引擎
+ */
 class IncrementalTranslationPipeline(
-    private val translator: Translator,
+    private val translateFn: suspend (String) -> String,
     private val maxConcurrency: Int = 3
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -67,7 +69,7 @@ class IncrementalTranslationPipeline(
     private fun submitTranslation(text: String, isPartial: Boolean) {
         val job = scope.async {
             try {
-                translator.translate(text).await().trim()
+                translateFn(text).trim()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
