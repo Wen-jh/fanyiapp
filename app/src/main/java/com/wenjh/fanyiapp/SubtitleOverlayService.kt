@@ -451,6 +451,14 @@ class SubtitleOverlayService : Service() {
 
                     when (val event = recognizer.accept(buffer, read)) {
                         is AsrEvent.Partial -> serviceScope.launch {
+                            // 如果新 partial 与 buffered 内容完全不同（新句子），清空旧缓冲
+                            if (bufferedFinalText.isNotBlank() &&
+                                !event.text.startsWith(bufferedFinalText.take(10)) &&
+                                !bufferedFinalText.take(10).startsWith(event.text.take(10))) {
+                                bufferedFinalText = ""
+                                smoothRenderer.reset()
+                            }
+
                             lastOriginalText = if (bufferedFinalText.isBlank()) {
                                 event.text
                             } else {
@@ -489,6 +497,7 @@ class SubtitleOverlayService : Service() {
                             // 新管道：直接提交 final 到增量翻译
                             if (isTranslatorReady && translationPipeline != null) {
                                 translationPipeline?.submitFinal(event.text)
+                                bufferedFinalText = ""
                                 renderPipeline(levelOverride = levelHint)
                                 return@launch
                             }
@@ -535,6 +544,13 @@ class SubtitleOverlayService : Service() {
     private fun queueFinalTranslation(text: String, levelHintOverride: String? = null) {
         val normalized = normalizeSubtitleText(text)
         if (normalized.isBlank()) return
+
+        // 新句子开始时清空旧缓冲，防止字幕无限增长
+        if (bufferedFinalText.isNotBlank() &&
+            !normalized.startsWith(bufferedFinalText.take(10)) &&
+            !bufferedFinalText.take(10).startsWith(normalized.take(10))) {
+            bufferedFinalText = ""
+        }
 
         bufferedFinalText = mergeRecognizedText(bufferedFinalText, normalized)
         lastOriginalText = bufferedFinalText

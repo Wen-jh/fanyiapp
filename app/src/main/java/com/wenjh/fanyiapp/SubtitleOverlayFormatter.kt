@@ -35,7 +35,7 @@ object SubtitleOverlayFormatter {
         originalLabel: String = "识别",
         translatedLabel: String = "翻译"
     ): String {
-        val safeOriginal = original.ifBlank { "（等待识别）" }
+        // 悬浮窗只显示纯字幕：原文 + 译文，不带前缀标签
         val safeTranslated = translated.ifBlank {
             overlayTranslationPlaceholder(
                 translationState = translationState,
@@ -43,10 +43,11 @@ object SubtitleOverlayFormatter {
                 original = original
             )
         }
-        return listOf(
-            "$originalLabel：$safeOriginal",
-            "$translatedLabel：$safeTranslated"
-        ).joinToString("\n")
+        return if (original.isBlank()) {
+            safeTranslated
+        } else {
+            listOf(original, safeTranslated).joinToString("\n")
+        }
     }
 
     fun composePipeline(

@@ -1,23 +1,29 @@
 package com.wenjh.fanyiapp
 
+/**
+ * 平滑字幕渲染器 — 只保留当前正在说话的一句话，新句子开始时自动清空旧内容
+ */
 class SmoothSubtitleRenderer {
     private var displayedOriginal: String = ""
     private var displayedTranslation: String = ""
-    private var committedOriginal: String = ""
-    private var committedTranslation: String = ""
+    private var lastFinalSource: String = ""
 
     fun onPartialUpdate(source: String, translated: String) {
-        val committedLen = IncrementalTranslationPipeline.findCommonPrefix(committedOriginal, source)
-        committedOriginal = source.substring(0, committedLen)
-        committedTranslation = safeSubstring(translated, 0, mapSourceIndexToTarget(committedLen, source, translated))
+        // 如果新 partial 与已显示的 final 完全不同（新句子开始），清空旧内容
+        if (lastFinalSource.isNotBlank() && !source.startsWith(lastFinalSource) && !lastFinalSource.startsWith(source)) {
+            // 新句子开始，直接替换
+            displayedOriginal = source
+            displayedTranslation = translated
+            return
+        }
 
         displayedOriginal = source
         displayedTranslation = translated
     }
 
     fun onFinalUpdate(source: String, translated: String) {
-        committedOriginal = source
-        committedTranslation = translated
+        // final 结果到达，标记为已确认
+        lastFinalSource = source
         displayedOriginal = source
         displayedTranslation = translated
     }
@@ -29,19 +35,6 @@ class SmoothSubtitleRenderer {
     fun reset() {
         displayedOriginal = ""
         displayedTranslation = ""
-        committedOriginal = ""
-        committedTranslation = ""
-    }
-
-    private fun mapSourceIndexToTarget(sourceIndex: Int, source: String, target: String): Int {
-        if (source.isEmpty()) return 0
-        val ratio = target.length.toFloat() / source.length.toFloat()
-        return (sourceIndex * ratio).toInt().coerceIn(0, target.length)
-    }
-
-    private fun safeSubstring(text: String, start: Int, end: Int): String {
-        val safeStart = start.coerceIn(0, text.length)
-        val safeEnd = end.coerceIn(safeStart, text.length)
-        return text.substring(safeStart, safeEnd)
+        lastFinalSource = ""
     }
 }

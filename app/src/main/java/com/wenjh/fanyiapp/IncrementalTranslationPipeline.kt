@@ -29,6 +29,13 @@ class IncrementalTranslationPipeline(
         val normalized = text.trim()
         if (normalized.isBlank()) return
 
+        // 新句子检测：如果与上次提交完全不同，清空旧状态
+        if (lastSubmittedSource.isNotBlank() && isNewSentence(lastSubmittedSource, normalized)) {
+            cancelAllJobs()
+            translationCache.clear()
+            lastSubmittedSource = ""
+        }
+
         val commonPrefix = findCommonPrefix(lastSubmittedSource, normalized)
         val newPart = if (commonPrefix < normalized.length) normalized.substring(commonPrefix) else ""
 
@@ -53,6 +60,12 @@ class IncrementalTranslationPipeline(
     fun submitFinal(text: String) {
         val normalized = text.trim()
         if (normalized.isBlank()) return
+
+        // 新句子检测
+        if (lastSubmittedSource.isNotBlank() && isNewSentence(lastSubmittedSource, normalized)) {
+            cancelAllJobs()
+            translationCache.clear()
+        }
 
         cancelAllJobs()
 
@@ -142,6 +155,13 @@ class IncrementalTranslationPipeline(
         fun isSentenceEnd(text: String): Boolean {
             return text.endsWith("。") || text.endsWith("！") || text.endsWith("？") ||
                 text.endsWith(".") || text.endsWith("!") || text.endsWith("?")
+        }
+
+        fun isNewSentence(previous: String, current: String): Boolean {
+            // 如果两个文本的前10个字符完全不同，认为是新句子
+            val prevPrefix = previous.take(10)
+            val currPrefix = current.take(10)
+            return !current.startsWith(prevPrefix) && !previous.startsWith(currPrefix)
         }
     }
 }
