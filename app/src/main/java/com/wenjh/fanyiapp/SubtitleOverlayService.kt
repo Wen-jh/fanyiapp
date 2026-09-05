@@ -12,6 +12,8 @@ import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
@@ -47,6 +49,7 @@ class SubtitleOverlayService : Service() {
         const val ACTION_START = "com.wenjh.fanyiapp.action.START"
         const val EXTRA_RESULT_CODE = "extra_result_code"
         const val EXTRA_DATA_INTENT = "extra_data_intent"
+        const val EXTRA_TTS_ENABLED = "extra_tts_enabled"
 
         private const val CHANNEL_ID = "subtitle_overlay"
         private const val NOTIFICATION_ID = 1001
@@ -87,6 +90,7 @@ class SubtitleOverlayService : Service() {
     private var voskRecognizer: VoskStreamingRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
     private var textToSpeechReady = false
+    private var textToSpeechEnabled = true
     private var lastSpokenTranslation: String = ""
     private var lastSpokenSource: String = ""
 
@@ -124,6 +128,7 @@ class SubtitleOverlayService : Service() {
         }
 
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
+        textToSpeechEnabled = intent.getBooleanExtra(EXTRA_TTS_ENABLED, true)
         val dataIntent = intent.getParcelableExtra<Intent>(EXTRA_DATA_INTENT)
         if (resultCode != 0 && dataIntent != null) {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -281,6 +286,14 @@ class SubtitleOverlayService : Service() {
         }
 
         try {
+            val hasInternet = hasValidatedInternet()
+            if (!hasInternet) {
+                translationState = "无法连接网络，ML Kit 模型下载未开始"
+                renderPipeline()
+            } else {
+                translationState = "网络已连接，正在请求 ML Kit 模型下载"
+                renderPipeline()
+            }
             translationState = "开始下载翻译模型"
             renderPipeline()
             startDownloadStatusTicker()
@@ -306,7 +319,15 @@ class SubtitleOverlayService : Service() {
         renderPipeline()
     }
 
-    private fun setupHyMtPipeline() {
+    private fun hasValidatedInternet(): Boolean {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+
         val engine = hyMtEngine ?: return
         translationPipeline?.release()
         smoothRenderer.reset()
@@ -330,7 +351,7 @@ class SubtitleOverlayService : Service() {
                     val (displayOrig, displayTrans) = smoothRenderer.getDisplayText()
                     lastOriginalText = displayOrig
                     lastTranslatedText = displayTrans
-                    if (!isPartial) speakTranslation(displayTrans, source)
+                    if (!isPartial && textToSpeechEnabled) speakTranslation(displayTrans, source)
                     translationState = if (isPartial) "实时翻译中(Hy-MT)" else "翻译完成(Hy-MT)"
                     renderPipeline()
                 }
@@ -357,7 +378,7 @@ class SubtitleOverlayService : Service() {
                     val (displayOrig, displayTrans) = smoothRenderer.getDisplayText()
                     lastOriginalText = displayOrig
                     lastTranslatedText = displayTrans
-                    if (!isPartial) speakTranslation(displayTrans, source)
+                    if (!isPartial && textToSpeechEnabled) speakTranslation(displayTrans, source)
                     translationState = if (isPartial) "实时翻译中(ML Kit)" else "翻译完成(ML Kit)"
                     renderPipeline()
                 }

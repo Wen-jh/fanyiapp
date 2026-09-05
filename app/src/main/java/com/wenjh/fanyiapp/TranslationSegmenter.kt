@@ -69,16 +69,28 @@ class TranslationSegmenter(
         val normalized = text.trim()
         if (normalized.isBlank()) return null
         if (normalized == lastSubmitted && !hasDivergedSinceLastSubmission) return null
+        if (!hasSentenceEnding(normalized) && looksIncompleteJapanese(normalized) && normalized.length < MAX_FORCED_SEGMENT_LENGTH) {
+            lastPartial = normalized
+            lastPartialSinceMs = System.currentTimeMillis()
+            return null
+        }
         lastSubmitted = normalized
         lastPartial = normalized
         hasDivergedSinceLastSubmission = false
         return normalized
     }
 
-    private fun hasMeaningfulGrowthSinceLastSubmission(normalized: String): Boolean {
-        if (lastSubmitted.isBlank()) return true
-        if (normalized == lastSubmitted) return hasDivergedSinceLastSubmission
-        if (!normalized.startsWith(lastSubmitted)) return true
-        return normalized.length - lastSubmitted.length >= minMeaningfulGrowthChars
+    private fun hasSentenceEnding(text: String): Boolean {
+        return text.endsWith("。") || text.endsWith("！") || text.endsWith("？") ||
+            text.endsWith(".") || text.endsWith("!") || text.endsWith("?")
+    }
+
+    private fun looksIncompleteJapanese(text: String): Boolean {
+        val endings = listOf("は", "が", "を", "に", "で", "と", "も", "から", "まで", "ので", "けど", "けれど", "そして", "しかし")
+        return endings.any { text.endsWith(it) }
+    }
+
+    companion object {
+        private const val MAX_FORCED_SEGMENT_LENGTH = 36
     }
 }

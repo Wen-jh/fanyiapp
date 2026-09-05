@@ -88,13 +88,16 @@
                     android:textSize="16sp" />
             </LinearLayout>
 
-            <TextView
+            <CheckBox
+                android:id="@+id/ttsSwitch"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="9dp"
-                android:text="内置 Hy-MT 翻译模型，首次启动解包后无需联网"
-                android:textColor="#77777F"
-                android:textSize="14sp" />
+                android:layout_marginTop="10dp"
+                android:buttonTint="#32D67A"
+                android:checked="true"
+                android:text="翻译完成后自动朗读"
+                android:textColor="#F4F4F5"
+                android:textSize="15sp" />
         </LinearLayout>
 
         <LinearLayout

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +19,7 @@ import androidx.core.content.ContextCompat
 class SubtitleControlActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var startButton: Button
+    private lateinit var ttsSwitch: CheckBox
     private lateinit var projectionManager: MediaProjectionManager
     private var projectionDataIntent: Intent? = null
     private var projectionResultCode: Int? = null
@@ -54,6 +56,7 @@ class SubtitleControlActivity : AppCompatActivity() {
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         statusText = findViewById(R.id.statusText)
         startButton = findViewById(R.id.startButton)
+        ttsSwitch = findViewById(R.id.ttsSwitch)
         findViewById<ImageButton>(R.id.backButton).setOnClickListener { finish() }
         findViewById<Button>(R.id.overlayButton).setOnClickListener { requestOverlayPermission() }
         startButton.setOnClickListener { ensurePermissionsAndStart() }
@@ -99,6 +102,7 @@ class SubtitleControlActivity : AppCompatActivity() {
             action = SubtitleOverlayService.ACTION_START
             projectionResultCode?.let { putExtra(SubtitleOverlayService.EXTRA_RESULT_CODE, it) }
             projectionDataIntent?.let { putExtra(SubtitleOverlayService.EXTRA_DATA_INTENT, it) }
+            putExtra(SubtitleOverlayService.EXTRA_TTS_ENABLED, ttsSwitch.isChecked)
         }
         ContextCompat.startForegroundService(this, serviceIntent)
         showStatus("服务启动中：悬浮窗将只显示识别字幕和翻译字幕，权限与运行状态请在本页查看。")
