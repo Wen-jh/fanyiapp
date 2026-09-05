@@ -90,6 +90,13 @@ class TranslationSegmenter(
         return endings.any { text.endsWith(it) }
     }
 
+    private fun hasMeaningfulGrowthSinceLastSubmission(normalized: String): Boolean {
+        if (lastSubmitted.isBlank()) return true
+        if (normalized == lastSubmitted) return hasDivergedSinceLastSubmission
+        if (!normalized.startsWith(lastSubmitted)) return true
+        return normalized.length - lastSubmitted.length >= minMeaningfulGrowthChars
+    }
+
     companion object {
         private const val MAX_FORCED_SEGMENT_LENGTH = 36
     }
