@@ -15,6 +15,8 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -50,6 +52,7 @@ class SubtitleOverlayService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val FINAL_TRANSLATION_DEBOUNCE_MS = 100L
         private const val IMMEDIATE_FINAL_TRANSLATION_LENGTH = 20
+        private const val MAX_SPEAK_LENGTH = 160
 
         fun shouldApplyPolishedResult(
             finalToken: Long,
@@ -82,6 +85,10 @@ class SubtitleOverlayService : Service() {
     private var bufferedFinalFlushJob: Job? = null
     private var audioSource: PlaybackCaptureAudioSource? = null
     private var voskRecognizer: VoskStreamingRecognizer? = null
+    private var textToSpeech: TextToSpeech? = null
+    private var textToSpeechReady = false
+    private var lastSpokenTranslation: String = ""
+    private var lastSpokenSource: String = ""
 
     private val translationSegmenter = TranslationSegmenter()
     private val pendingTranslationCoordinator = PendingTranslationCoordinator()
@@ -124,6 +131,7 @@ class SubtitleOverlayService : Service() {
         }
 
         showOverlay()
+        initializeTextToSpeech()
         serviceScope.launch { bootstrapPipeline() }
         return START_NOT_STICKY
     }
@@ -322,6 +330,7 @@ class SubtitleOverlayService : Service() {
                     val (displayOrig, displayTrans) = smoothRenderer.getDisplayText()
                     lastOriginalText = displayOrig
                     lastTranslatedText = displayTrans
+                    if (!isPartial) speakTranslation(displayTrans, source)
                     translationState = if (isPartial) "实时翻译中(Hy-MT)" else "翻译完成(Hy-MT)"
                     renderPipeline()
                 }
@@ -348,6 +357,7 @@ class SubtitleOverlayService : Service() {
                     val (displayOrig, displayTrans) = smoothRenderer.getDisplayText()
                     lastOriginalText = displayOrig
                     lastTranslatedText = displayTrans
+                    if (!isPartial) speakTranslation(displayTrans, source)
                     translationState = if (isPartial) "实时翻译中(ML Kit)" else "翻译完成(ML Kit)"
                     renderPipeline()
                 }
@@ -781,7 +791,34 @@ class SubtitleOverlayService : Service() {
             block == Character.UnicodeBlock.KATAKANA
     }
 
-    private fun showOverlay() {
+    private fun initializeTextToSpeech() {
+        textToSpeech = TextToSpeech(applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeech?.let { tts ->
+                    val languageStatus = tts.setLanguage(java.util.Locale.SIMPLIFIED_CHINESE)
+                    textToSpeechReady = languageStatus != TextToSpeech.LANG_MISSING_DATA &&
+                        languageStatus != TextToSpeech.LANG_NOT_SUPPORTED
+                }
+            }
+        }.also { tts ->
+            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) = Unit
+                override fun onDone(utteranceId: String?) = Unit
+                override fun onError(utteranceId: String?) = Unit
+            })
+        }
+    }
+
+    private fun speakTranslation(translation: String, source: String) {
+        val text = translation.trim()
+        if (textToSpeechReady && text.isNotBlank() && text != lastSpokenTranslation && source != lastSpokenSource && text.length <= MAX_SPEAK_LENGTH) {
+            lastSpokenTranslation = text
+            lastSpokenSource = source
+            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "subtitle-$source")
+        }
+    }
+
+
         if (overlayView != null) return
 
         val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
@@ -937,6 +974,10 @@ class SubtitleOverlayService : Service() {
         translator = null
         hyMtEngine?.release()
         hyMtEngine = null
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+        textToSpeechReady = false
         mediaProjection?.stop()
         mediaProjection = null
         overlayView?.let { view -> windowManager?.removeView(view) }
