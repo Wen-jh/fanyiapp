@@ -327,7 +327,7 @@ class SubtitleOverlayService : Service() {
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
-
+    private fun setupHyMtPipeline() {
         val engine = hyMtEngine ?: return
         translationPipeline?.release()
         smoothRenderer.reset()
@@ -839,7 +839,7 @@ class SubtitleOverlayService : Service() {
         }
     }
 
-
+    private fun showOverlay() {
         if (overlayView != null) return
 
         val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
