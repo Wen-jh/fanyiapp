@@ -15,13 +15,15 @@ import kotlinx.coroutines.launch
  */
 class IncrementalTranslationPipeline(
     private val translateFn: suspend (String) -> String,
-    private val maxConcurrency: Int = 3
+    private val maxConcurrency: Int = 1
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeJobs = mutableMapOf<String, Deferred<String>>()
     private val translationCache = LinkedHashMap<String, String>(MAX_CACHE_SIZE, 0.75f, true)
     private var lastSubmittedSource: String = ""
     private var generation: Long = 0L
+    private var latestRequestId: Long = 0L
+    private var pendingLatest: Pair<String, Boolean>? = null
 
     var onTranslationUpdate: ((source: String, translated: String, isPartial: Boolean) -> Unit)? = null
 
@@ -43,18 +45,15 @@ class IncrementalTranslationPipeline(
 
         if (newPart.length < MIN_NEW_CHARS && !isSentenceEnd(normalized)) return
 
+        // 同一句话的前缀增长：取消旧版本，只保留最新版本，避免旧结果晚到后覆盖新结果。
+        cancelStaleJobs(normalized)
         translationCache[normalized]?.let { cached ->
             emitUpdate(normalized, cached, isPartial = true)
             lastSubmittedSource = normalized
             return
         }
 
-        cancelStaleJobs(normalized)
-
-        if (activeJobs.size < maxConcurrency) {
-            submitTranslation(normalized, isPartial = true)
-        }
-
+        submitTranslation(normalized, isPartial = true)
         lastSubmittedSource = normalized
     }
 
@@ -84,6 +83,7 @@ class IncrementalTranslationPipeline(
 
     private fun submitTranslation(text: String, isPartial: Boolean) {
         val jobGeneration = generation
+        val requestId = ++latestRequestId
         val job = scope.async {
             try {
                 translateFn(text).trim()
@@ -102,7 +102,7 @@ class IncrementalTranslationPipeline(
                 ""
             }
             activeJobs.remove(text)
-            if (jobGeneration != generation) return@launch
+            if (jobGeneration != generation || requestId != latestRequestId) return@launch
             if (result.isNotBlank()) {
                 addToCache(text, result)
                 emitUpdate(text, result, isPartial)
@@ -116,9 +116,8 @@ class IncrementalTranslationPipeline(
 
     @Synchronized
     private fun cancelStaleJobs(currentText: String) {
-        val stale = activeJobs.keys.filter { key ->
-            !currentText.startsWith(key) && !key.startsWith(currentText)
-        }
+        // 增量翻译只需要最新前缀。旧前缀即使完成也不能用于当前字幕，继续推理只会拖慢下一次更新。
+        val stale = activeJobs.keys.filter { it != currentText }
         stale.forEach { key ->
             activeJobs[key]?.cancel()
             activeJobs.remove(key)
