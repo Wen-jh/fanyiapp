@@ -18,8 +18,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        buildConfigField("boolean", "DEFAULT_AUDIO_DUMP_ENABLED", "false")
-        buildConfigField("boolean", "DEFAULT_AUDIO_DUMP_WAV", "true")
         ndk {
             abiFilters += listOf("arm64-v8a")
         }

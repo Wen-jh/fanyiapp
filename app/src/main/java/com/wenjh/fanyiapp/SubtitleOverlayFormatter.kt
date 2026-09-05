@@ -56,7 +56,7 @@ object SubtitleOverlayFormatter {
         modelState: String,
         recognitionState: String,
         translationState: String,
-        dumpState: String,
+        dumpState: String = "未启用",
         original: String,
         translated: String,
         levelHint: String,
@@ -87,7 +87,6 @@ object SubtitleOverlayFormatter {
             "模型：${modelState.ifBlank { "未开始" }}",
             "识别：${recognitionState.ifBlank { "未开始" }}",
             "翻译：${translationState.ifBlank { "未开始" }}",
-            "调试：${dumpState.ifBlank { "未启用" }}",
             safeLevelHint,
             "$originalLabel：$safeOriginal",
             "$translatedLabel：$safeTranslated"

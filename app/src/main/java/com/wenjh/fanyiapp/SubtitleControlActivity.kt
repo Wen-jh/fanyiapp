@@ -99,8 +99,6 @@ class SubtitleControlActivity : AppCompatActivity() {
             action = SubtitleOverlayService.ACTION_START
             projectionResultCode?.let { putExtra(SubtitleOverlayService.EXTRA_RESULT_CODE, it) }
             projectionDataIntent?.let { putExtra(SubtitleOverlayService.EXTRA_DATA_INTENT, it) }
-            putExtra(SubtitleOverlayService.EXTRA_ENABLE_AUDIO_DUMP, BuildConfig.DEFAULT_AUDIO_DUMP_ENABLED)
-            putExtra(SubtitleOverlayService.EXTRA_AUDIO_DUMP_WAV, BuildConfig.DEFAULT_AUDIO_DUMP_WAV)
         }
         ContextCompat.startForegroundService(this, serviceIntent)
         showStatus("服务启动中：悬浮窗将只显示识别字幕和翻译字幕，权限与运行状态请在本页查看。")

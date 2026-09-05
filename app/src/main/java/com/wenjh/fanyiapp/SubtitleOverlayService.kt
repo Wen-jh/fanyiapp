@@ -45,8 +45,6 @@ class SubtitleOverlayService : Service() {
         const val ACTION_START = "com.wenjh.fanyiapp.action.START"
         const val EXTRA_RESULT_CODE = "extra_result_code"
         const val EXTRA_DATA_INTENT = "extra_data_intent"
-        const val EXTRA_ENABLE_AUDIO_DUMP = "extra_enable_audio_dump"
-        const val EXTRA_AUDIO_DUMP_WAV = "extra_audio_dump_wav"
 
         private const val CHANNEL_ID = "subtitle_overlay"
         private const val NOTIFICATION_ID = 1001
@@ -84,7 +82,6 @@ class SubtitleOverlayService : Service() {
     private var bufferedFinalFlushJob: Job? = null
     private var audioSource: PlaybackCaptureAudioSource? = null
     private var voskRecognizer: VoskStreamingRecognizer? = null
-    private var debugDumpWriter: AudioDebugDumpWriter? = null
 
     private val translationSegmenter = TranslationSegmenter()
     private val pendingTranslationCoordinator = PendingTranslationCoordinator()
@@ -99,10 +96,7 @@ class SubtitleOverlayService : Service() {
     private var modelState: String = "未开始"
     private var recognitionState: String = "未开始"
     private var translationState: String = "未开始"
-    private var dumpState: String = "未启用"
     private var isTranslatorReady: Boolean = false
-    private var enableAudioDump: Boolean = false
-    private var dumpAsWav: Boolean = true
     private var lastLevelHint: String = "音量: 未知"
     private var latestFinalToken: Long = 0L
     private var latestDisplayedFinalSource: String = ""
@@ -121,9 +115,6 @@ class SubtitleOverlayService : Service() {
             stopSelf(startId)
             return START_NOT_STICKY
         }
-
-        enableAudioDump = intent.getBooleanExtra(EXTRA_ENABLE_AUDIO_DUMP, false)
-        dumpAsWav = intent.getBooleanExtra(EXTRA_AUDIO_DUMP_WAV, true)
 
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
         val dataIntent = intent.getParcelableExtra<Intent>(EXTRA_DATA_INTENT)
@@ -167,7 +158,6 @@ class SubtitleOverlayService : Service() {
         modelState = "等待本地识别模型初始化"
         recognitionState = "等待本地识别启动"
         translationState = "等待翻译模型初始化"
-        dumpState = if (enableAudioDump) "等待调试录音写入器初始化" else "未启用"
         pushNotification("$inputModeLabel / $captureState")
     }
 
@@ -393,25 +383,6 @@ class SubtitleOverlayService : Service() {
         audioLoopJob = serviceScope.launch(Dispatchers.IO) {
             val buffer = ShortArray(3200)
 
-            debugDumpWriter?.close()
-            debugDumpWriter = runCatching {
-                AudioDebugDumpWriter.create(
-                    baseDir = getExternalFilesDir("audio-dumps") ?: filesDir,
-                    enabled = enableAudioDump,
-                    preferWav = dumpAsWav,
-                    sampleRate = source.sampleRate,
-                    channelCount = source.channelCount
-                )
-            }.onSuccess { writer ->
-                dumpState = when {
-                    !enableAudioDump -> "未启用"
-                    writer != null -> "调试录音已保存"
-                    else -> "调试录音未启用"
-                }
-            }.onFailure { error ->
-                dumpState = "调试录音保存失败：${error.message ?: error.javaClass.simpleName}"
-            }.getOrNull()
-
             runCatching { source.start() }
                 .onFailure { error ->
                     serviceScope.launch {
@@ -434,8 +405,6 @@ class SubtitleOverlayService : Service() {
                 while (isActive) {
                     val read = source.read(buffer)
                     if (read <= 0) continue
-
-                    debugDumpWriter?.write(buffer, read)
 
                     val level = PlaybackCaptureAudioSource.normalizePcmLevel(buffer, read)
                     val levelHint = "音量: ${level.toInt()}%"
@@ -535,8 +504,6 @@ class SubtitleOverlayService : Service() {
                     }
                 }
                 runCatching { source.stop() }
-                debugDumpWriter?.close()
-                debugDumpWriter = null
             }
         }
     }
@@ -899,7 +866,6 @@ class SubtitleOverlayService : Service() {
             modelState = modelState,
             recognitionState = recognitionState,
             translationState = translationState,
-            dumpState = dumpState,
             original = lastOriginalText,
             translated = lastTranslatedText,
             levelHint = effectiveLevelHint
@@ -952,8 +918,6 @@ class SubtitleOverlayService : Service() {
         bufferedFinalFlushJob?.cancel()
         translationPipeline?.release()
         translationPipeline = null
-        debugDumpWriter?.close()
-        debugDumpWriter = null
         voskRecognizer?.close()
         voskRecognizer = null
         audioSource?.stop()
