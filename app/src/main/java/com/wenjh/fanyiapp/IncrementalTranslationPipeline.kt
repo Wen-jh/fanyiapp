@@ -53,6 +53,13 @@ class IncrementalTranslationPipeline(
             return
         }
 
+        if (activeJobs.isNotEmpty()) {
+            // native 推理不可被可靠地中断时，不要堆积请求；只保留最新前缀。
+            pendingLatest = normalized to true
+            lastSubmittedSource = normalized
+            return
+        }
+
         submitTranslation(normalized, isPartial = true)
         lastSubmittedSource = normalized
     }
@@ -106,6 +113,14 @@ class IncrementalTranslationPipeline(
             if (result.isNotBlank()) {
                 addToCache(text, result)
                 emitUpdate(text, result, isPartial)
+            }
+            val next = synchronized(this@IncrementalTranslationPipeline) {
+                pendingLatest.also { pendingLatest = null }
+            }
+            if (next != null && next.first != text) {
+                synchronized(this@IncrementalTranslationPipeline) {
+                    submitTranslation(next.first, next.second)
+                }
             }
         }
     }
