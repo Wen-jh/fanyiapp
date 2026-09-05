@@ -62,7 +62,7 @@ class SubtitleOverlayFormatterTest {
     }
 
     @Test
-    fun composeOverlaySubtitle_usesShortPlaceholderWithoutOriginal() {
+    fun composeOverlaySubtitle_keepsOverlayBlankUntilTranslationExists() {
         val result = SubtitleOverlayFormatter.composeOverlaySubtitle(
             original = "おはよう",
             translated = "",
@@ -70,8 +70,10 @@ class SubtitleOverlayFormatterTest {
             recognitionState = "本地识别中（实时）"
         )
 
-        assertEquals("（等待更稳定语句后翻译）", result)
+        assertEquals("", result)
         assertFalse(result.contains("おはよう"))
+        assertFalse(result.contains("正在"))
+        assertFalse(result.contains("等待"))
     }
 
 
