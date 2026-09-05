@@ -420,10 +420,20 @@ class SubtitleOverlayService : Service() {
 
                     when (val event = recognizer.accept(buffer, read)) {
                         is AsrEvent.Partial -> serviceScope.launch {
+                            val normalizedPartial = normalizeSubtitleText(event.text)
+                            val startsNewSentence = lastOriginalText.isNotBlank() &&
+                                IncrementalTranslationPipeline.isNewSentence(lastOriginalText, normalizedPartial)
+                            if (startsNewSentence) {
+                                bufferedFinalText = ""
+                                lastOriginalText = ""
+                                lastTranslatedText = ""
+                                smoothRenderer.reset()
+                            }
+
                             // 如果新 partial 与 buffered 内容完全不同（新句子），清空旧缓冲
-                            if (bufferedFinalText.isNotBlank() &&
+                            if (startsNewSentence || (bufferedFinalText.isNotBlank() &&
                                 !event.text.startsWith(bufferedFinalText.take(10)) &&
-                                !bufferedFinalText.take(10).startsWith(event.text.take(10))) {
+                                !bufferedFinalText.take(10).startsWith(event.text.take(10)))) {
                                 bufferedFinalText = ""
                                 smoothRenderer.reset()
                             }

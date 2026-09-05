@@ -21,6 +21,7 @@ class IncrementalTranslationPipeline(
     private val activeJobs = mutableMapOf<String, Deferred<String>>()
     private val translationCache = LinkedHashMap<String, String>(MAX_CACHE_SIZE, 0.75f, true)
     private var lastSubmittedSource: String = ""
+    private var generation: Long = 0L
 
     var onTranslationUpdate: ((source: String, translated: String, isPartial: Boolean) -> Unit)? = null
 
@@ -34,6 +35,7 @@ class IncrementalTranslationPipeline(
             cancelAllJobs()
             translationCache.clear()
             lastSubmittedSource = ""
+            generation++
         }
 
         val commonPrefix = findCommonPrefix(lastSubmittedSource, normalized)
@@ -65,6 +67,7 @@ class IncrementalTranslationPipeline(
         if (lastSubmittedSource.isNotBlank() && isNewSentence(lastSubmittedSource, normalized)) {
             cancelAllJobs()
             translationCache.clear()
+            generation++
         }
 
         cancelAllJobs()
@@ -80,6 +83,7 @@ class IncrementalTranslationPipeline(
     }
 
     private fun submitTranslation(text: String, isPartial: Boolean) {
+        val jobGeneration = generation
         val job = scope.async {
             try {
                 translateFn(text).trim()
@@ -98,6 +102,7 @@ class IncrementalTranslationPipeline(
                 ""
             }
             activeJobs.remove(text)
+            if (jobGeneration != generation) return@launch
             if (result.isNotBlank()) {
                 addToCache(text, result)
                 emitUpdate(text, result, isPartial)

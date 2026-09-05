@@ -47,7 +47,34 @@ class SubtitleOverlayFormatterTest {
     }
 
     @Test
-    fun composePipeline_showsFullVisualizedProgress() {
+    fun composeOverlaySubtitle_showsOnlyCurrentTranslation() {
+        val result = SubtitleOverlayFormatter.composeOverlaySubtitle(
+            original = "こんにちは",
+            translated = "你好",
+            translationState = "翻译完成",
+            recognitionState = "本地识别完成"
+        )
+
+        assertEquals("你好", result)
+        assertFalse(result.contains("こんにちは"))
+        assertFalse(result.contains("识别："))
+        assertFalse(result.contains("翻译："))
+    }
+
+    @Test
+    fun composeOverlaySubtitle_usesShortPlaceholderWithoutOriginal() {
+        val result = SubtitleOverlayFormatter.composeOverlaySubtitle(
+            original = "おはよう",
+            translated = "",
+            translationState = "实时翻译中",
+            recognitionState = "本地识别中（实时）"
+        )
+
+        assertEquals("（等待更稳定语句后翻译）", result)
+        assertFalse(result.contains("おはよう"))
+    }
+
+
         val result = SubtitleOverlayFormatter.composePipeline(
             modeLabel = "麦克风模式",
             captureState = "已接收到音频",
