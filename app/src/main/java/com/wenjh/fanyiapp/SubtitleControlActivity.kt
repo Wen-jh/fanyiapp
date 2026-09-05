@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -53,6 +54,7 @@ class SubtitleControlActivity : AppCompatActivity() {
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         statusText = findViewById(R.id.statusText)
         startButton = findViewById(R.id.startButton)
+        findViewById<ImageButton>(R.id.backButton).setOnClickListener { finish() }
         findViewById<Button>(R.id.overlayButton).setOnClickListener { requestOverlayPermission() }
         startButton.setOnClickListener { ensurePermissionsAndStart() }
         findViewById<Button>(R.id.stopButton).setOnClickListener {
