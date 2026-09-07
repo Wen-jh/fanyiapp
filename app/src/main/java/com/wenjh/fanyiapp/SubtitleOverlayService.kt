@@ -42,6 +42,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 class SubtitleOverlayService : Service() {
@@ -300,7 +301,12 @@ class SubtitleOverlayService : Service() {
             translationState = "开始下载翻译模型"
             renderPipeline()
             startDownloadStatusTicker()
-            translator?.downloadModelIfNeeded()?.await()
+            // ML Kit 下载加 90 秒超时，避免无限等待
+            withContext(Dispatchers.IO) {
+                withTimeoutOrNull(90_000L) {
+                    translator?.downloadModelIfNeeded()?.await()
+                } ?: throw java.util.concurrent.TimeoutException("ML Kit 模型下载超时（90s）")
+            }
             stopDownloadStatusTicker()
             translationState = "翻译模型已下载，正在初始化"
             renderPipeline()
@@ -309,7 +315,10 @@ class SubtitleOverlayService : Service() {
         } catch (error: Throwable) {
             stopDownloadStatusTicker()
             isTranslatorReady = false
-            translationState = "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
+            translationState = when (error) {
+                is java.util.concurrent.TimeoutException -> "翻译模型下载超时，请检查网络后重试"
+                else -> "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
+            }
         }
 
         if (isTranslatorReady) {
@@ -951,6 +960,9 @@ class SubtitleOverlayService : Service() {
         val displayText = if (translated.isBlank()) {
             when {
                 recognitionState.contains("识别中") || translationState.contains("翻译中") -> "正在识别系统声音 …"
+                translationState.contains("超时") || translationState.contains("失败") -> translationState
+                translationState.contains("下载中") -> "正在下载翻译模型 …"
+                translationState.contains("Hy-MT 不可用") -> "正在准备翻译模型 …"
                 modelState.contains("初始化") || translationState.contains("准备") -> "正在加载翻译模型 …"
                 else -> "等待识别系统声音 …"
             }
