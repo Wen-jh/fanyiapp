@@ -44,7 +44,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 class SubtitleOverlayService : Service() {
@@ -364,11 +363,9 @@ class SubtitleOverlayService : Service() {
                 translationState = "开始下载翻译模型（约60MB）"
                 renderPipeline()
                 startDownloadStatusTicker()
-                // ML Kit 下载加 90 秒超时，避免无限等待
+                // 不设超时：downloadModelIfNeeded 内部支持断点续传，下次调用自动从上次进度继续
                 withContext(Dispatchers.IO) {
-                    withTimeoutOrNull(90_000L) {
-                        translator?.downloadModelIfNeeded()?.await()
-                    } ?: throw java.util.concurrent.TimeoutException("ML Kit 模型下载超时（90s）")
+                    translator?.downloadModelIfNeeded()?.await()
                 }
                 stopDownloadStatusTicker()
                 translationState = "翻译模型已下载，正在初始化"
@@ -379,10 +376,7 @@ class SubtitleOverlayService : Service() {
         } catch (error: Throwable) {
             stopDownloadStatusTicker()
             isTranslatorReady = false
-            translationState = when (error) {
-                is java.util.concurrent.TimeoutException -> "翻译模型下载超时，请检查网络后重试"
-                else -> "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
-            }
+            translationState = "翻译模型下载失败：${error.message ?: error.javaClass.simpleName}"
         }
 
         if (isTranslatorReady) {
