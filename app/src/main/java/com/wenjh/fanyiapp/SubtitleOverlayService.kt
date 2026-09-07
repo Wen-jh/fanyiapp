@@ -130,6 +130,7 @@ class SubtitleOverlayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("正在初始化链路"))
+        initializeTextToSpeech()
 
         if (intent?.action != ACTION_START) {
             stopSelf(startId)
@@ -146,7 +147,6 @@ class SubtitleOverlayService : Service() {
         }
 
         showOverlay()
-        initializeTextToSpeech()
         serviceScope.launch { bootstrapPipeline() }
         return START_NOT_STICKY
     }
@@ -902,10 +902,11 @@ class SubtitleOverlayService : Service() {
 
     private fun speakTranslation(translation: String, source: String) {
         val text = translation.trim()
-        if (textToSpeechReady && text.isNotBlank() && text != lastSpokenTranslation && source != lastSpokenSource && text.length <= MAX_SPEAK_LENGTH) {
+        // 去重：只按译文内容判断，不按 source（source 可能只是增长了一个字符）
+        if (textToSpeechReady && text.isNotBlank() && text != lastSpokenTranslation && text.length <= MAX_SPEAK_LENGTH) {
             lastSpokenTranslation = text
             lastSpokenSource = source
-            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "subtitle-$source")
+            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "subtitle-${System.currentTimeMillis()}")
         }
     }
 
