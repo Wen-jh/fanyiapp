@@ -1,23 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlayRoot"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:background="@android:color/transparent"
-    android:padding="0dp">
+    android:orientation="vertical"
+    android:background="@drawable/bg_overlay_panel"
+    android:paddingHorizontal="14dp"
+    android:paddingVertical="10dp">
 
+    <!-- 顶部工具栏（折叠时隐藏） -->
+    <LinearLayout
+        android:id="@+id/toolbarRow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/btnCollapse"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:background="@drawable/bg_overlay_chip"
+            android:gravity="center"
+            android:text="⤡"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+
+        <View
+            android:layout_width="44dp"
+            android:layout_height="3dp"
+            android:layout_marginHorizontal="14dp"
+            android:background="#55FFFFFF" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="30dp"
+            android:background="@drawable/bg_overlay_chip"
+            android:paddingHorizontal="12dp"
+            android:gravity="center"
+            android:text="日语 → 简体中文"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- 字幕区 -->
     <TextView
         android:id="@+id/subtitleText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
         android:maxWidth="340dp"
         android:text=""
         android:textColor="#FFFFFF"
         android:textSize="16sp"
         android:lineSpacingExtra="4dp"
-        android:shadowColor="#000000"
-        android:shadowDx="1"
-        android:shadowDy="1"
-        android:shadowRadius="4"
         android:gravity="center" />
 
-</FrameLayout>
+</LinearLayout>

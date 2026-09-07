@@ -76,7 +76,10 @@ class SubtitleOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var subtitleText: TextView? = null
+    private var toolbarRow: View? = null
+    private var btnCollapse: TextView? = null
     private var overlayParams: WindowManager.LayoutParams? = null
+    private var isCollapsed: Boolean = false
     private var mediaProjection: MediaProjection? = null
     private var translator: Translator? = null
     private var translatorJob: Job? = null
@@ -845,6 +848,8 @@ class SubtitleOverlayService : Service() {
         val inflater = getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater
         overlayView = inflater.inflate(R.layout.overlay_subtitle, null)
         subtitleText = overlayView?.findViewById(R.id.subtitleText)
+        toolbarRow = overlayView?.findViewById(R.id.toolbarRow)
+        btnCollapse = overlayView?.findViewById(R.id.btnCollapse)
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -866,9 +871,23 @@ class SubtitleOverlayService : Service() {
         }
 
         bindDragGesture()
+        bindCollapseButton()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager?.addView(overlayView, overlayParams)
         renderPipeline()
+    }
+
+    private fun bindCollapseButton() {
+        btnCollapse?.setOnClickListener {
+            isCollapsed = !isCollapsed
+            toolbarRow?.visibility = if (isCollapsed) View.GONE else View.VISIBLE
+            btnCollapse?.text = if (isCollapsed) "⤢" else "⤡"
+            // 折叠时隐藏工具栏后，让窗口重新测量大小
+            overlayParams?.let { params ->
+                windowManager?.updateViewLayout(overlayView, params)
+            }
+            renderPipeline()
+        }
     }
 
     private fun bindDragGesture() {
@@ -922,12 +941,22 @@ class SubtitleOverlayService : Service() {
 
     private fun renderPipeline(levelOverride: String? = null) {
         val effectiveLevelHint = levelOverride ?: lastLevelHint
-        val overlayStatus = SubtitleOverlayFormatter.composeOverlaySubtitle(
+        val translated = SubtitleOverlayFormatter.composeOverlaySubtitle(
             original = lastOriginalText,
             translated = lastTranslatedText,
             translationState = translationState,
             recognitionState = recognitionState
         )
+        // 加载提示：识别还没产出任何内容时，先显示占位提示（一加风格）
+        val displayText = if (translated.isBlank()) {
+            when {
+                recognitionState.contains("识别中") || translationState.contains("翻译中") -> "正在识别系统声音 …"
+                modelState.contains("初始化") || translationState.contains("准备") -> "正在加载翻译模型 …"
+                else -> "等待识别系统声音 …"
+            }
+        } else {
+            translated
+        }
         val notificationStatus = SubtitleOverlayFormatter.composePipeline(
             modeLabel = inputModeLabel,
             captureState = captureState,
@@ -938,7 +967,7 @@ class SubtitleOverlayService : Service() {
             translated = lastTranslatedText,
             levelHint = effectiveLevelHint
         )
-        subtitleText?.text = overlayStatus
+        subtitleText?.text = displayText
         pushNotification(notificationStatus)
     }
 
@@ -1004,6 +1033,8 @@ class SubtitleOverlayService : Service() {
         overlayView?.let { view -> windowManager?.removeView(view) }
         overlayView = null
         subtitleText = null
+        toolbarRow = null
+        btnCollapse = null
         overlayParams = null
         windowManager = null
         serviceScope.cancel()
