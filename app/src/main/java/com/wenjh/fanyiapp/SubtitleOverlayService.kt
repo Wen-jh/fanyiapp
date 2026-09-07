@@ -51,6 +51,9 @@ class SubtitleOverlayService : Service() {
         const val EXTRA_RESULT_CODE = "extra_result_code"
         const val EXTRA_DATA_INTENT = "extra_data_intent"
         const val EXTRA_TTS_ENABLED = "extra_tts_enabled"
+        const val EXTRA_FORCE_MLKIT = "extra_force_mlkit"
+        const val ACTION_PIPELINE_STATUS = "com.wenjh.fanyiapp.action.PIPELINE_STATUS"
+        const val BROADCAST_PIPELINE_STATUS = "pipeline_status"
 
         private const val CHANNEL_ID = "subtitle_overlay"
         private const val NOTIFICATION_ID = 1001
@@ -119,6 +122,7 @@ class SubtitleOverlayService : Service() {
     private var lastSubmittedTranslationText: String = ""
     private var lastSubmittedTranslationWasProvisional: Boolean = false
     private var bufferedFinalText: String = ""
+    private var forceMlKit: Boolean = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -133,6 +137,7 @@ class SubtitleOverlayService : Service() {
 
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
         textToSpeechEnabled = intent.getBooleanExtra(EXTRA_TTS_ENABLED, true)
+        forceMlKit = intent.getBooleanExtra(EXTRA_FORCE_MLKIT, false)
         val dataIntent = intent.getParcelableExtra<Intent>(EXTRA_DATA_INTENT)
         if (resultCode != 0 && dataIntent != null) {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -212,7 +217,17 @@ class SubtitleOverlayService : Service() {
         recognitionState = "等待本地识别启动"
         renderPipeline()
 
-        val result = withContext(Dispatchers.IO) { VoskModelManager().prepareModel(this@SubtitleOverlayService) }
+        val result = withContext(Dispatchers.IO) {
+            VoskModelManager().prepareModel(this@SubtitleOverlayService) { copied, total ->
+                val pct = if (total > 0) ((copied * 100L) / total).toInt().coerceIn(0, 100) else -1
+                modelState = if (pct >= 0) {
+                    "正在解包识别模型（$pct%）"
+                } else {
+                    "正在解包识别模型（${copied / 1024 / 1024}MB）"
+                }
+                serviceScope.launch { renderPipeline() }
+            }
+        }
         result.onSuccess { modelDir ->
             runCatching {
                 voskRecognizer?.close()
@@ -235,30 +250,32 @@ class SubtitleOverlayService : Service() {
         translationState = "正在准备翻译引擎"
         renderPipeline()
 
-        // 优先尝试 Hy-MT 离线翻译（不需要网络）
-        val hyMtResult = withContext(Dispatchers.IO) {
-            runCatching {
-                val engine = HyMtTranslationEngine(applicationContext)
-                val result = engine.prepareIfNeeded()
-                if (result.ready) {
-                    hyMtEngine = engine
-                    true
-                } else {
-                    false
-                }
-            }.getOrDefault(false)
+        // 优先尝试 Hy-MT 离线翻译（不需要网络），除非用户手动选择了 ML Kit
+        if (!forceMlKit) {
+            val hyMtResult = withContext(Dispatchers.IO) {
+                runCatching {
+                    val engine = HyMtTranslationEngine(applicationContext)
+                    val result = engine.prepareIfNeeded()
+                    if (result.ready) {
+                        hyMtEngine = engine
+                        true
+                    } else {
+                        false
+                    }
+                }.getOrDefault(false)
+            }
+
+            if (hyMtResult) {
+                isTranslatorReady = true
+                translationState = "Hy-MT 离线翻译已就绪"
+                renderPipeline()
+                setupHyMtPipeline()
+                return
+            }
         }
 
-        if (hyMtResult) {
-            isTranslatorReady = true
-            translationState = "Hy-MT 离线翻译已就绪"
-            renderPipeline()
-            setupHyMtPipeline()
-            return
-        }
-
-        // Hy-MT 不可用，回退到 ML Kit
-        translationState = "Hy-MT 不可用，正在准备 ML Kit 翻译模型"
+        // Hy-MT 不可用或用户选择了 ML Kit
+        translationState = if (forceMlKit) "已选择 ML Kit，正在准备翻译模型" else "Hy-MT 不可用，正在准备 ML Kit 翻译模型"
         renderPipeline()
 
         val options = TranslatorOptions.Builder()
@@ -981,6 +998,16 @@ class SubtitleOverlayService : Service() {
         )
         subtitleText?.text = displayText
         pushNotification(notificationStatus)
+        broadcastPipelineStatus()
+    }
+
+    private fun broadcastPipelineStatus() {
+        val status = "●   音频输入\n     $captureState\n\n●   语音识别\n     $modelState / $recognitionState\n\n●   翻译引擎\n     $translationState"
+        val intent = Intent(ACTION_PIPELINE_STATUS).apply {
+            putExtra(BROADCAST_PIPELINE_STATUS, status)
+            setPackage(packageName)
+        }
+        sendBroadcast(intent)
     }
 
     private fun buildNotification(status: String): Notification {

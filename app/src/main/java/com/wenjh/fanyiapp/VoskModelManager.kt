@@ -52,7 +52,10 @@ class VoskModelManager(
         return REQUIRED_MODEL_PATHS.all { relativePath -> File(modelDir, relativePath).isFile }
     }
 
-    fun prepareModel(context: Context): Result<File> {
+    fun prepareModel(
+        context: Context,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): Result<File> {
         return runCatching {
             val rootDir = File(context.filesDir, "vosk")
             if (!rootDir.exists() && !rootDir.mkdirs()) {
@@ -68,7 +71,13 @@ class VoskModelManager(
             if (!resolution.modelDir.mkdirs()) {
                 throw IOException("无法创建模型目录: ${resolution.modelDir.absolutePath}")
             }
-            copyModelAssets(context, resolution.modelDir)
+            // 先统计总大小用于进度计算
+            val totalBytes = calculateAssetSize(context)
+            var copiedBytes = 0L
+            copyModelAssets(context, resolution.modelDir) { bytes ->
+                copiedBytes += bytes
+                onProgress?.invoke(copiedBytes, totalBytes)
+            }
             if (!hasRequiredModelFiles(resolution.modelDir)) {
                 throw IllegalStateException(
                     "未发现完整的 Vosk 日语模型文件，请将 vosk-model-small-ja-0.22 解压到 app/src/main/assets/$assetRoot/"
@@ -79,7 +88,46 @@ class VoskModelManager(
         }
     }
 
-    private fun copyModelAssets(context: Context, targetDir: File) {
+    private fun calculateAssetSize(context: Context): Long {
+        val assetManager = context.assets
+        val nestedRoot = OPTIONAL_TOP_LEVEL_WRAPPERS
+            .asSequence()
+            .map { "$assetRoot/$it" }
+            .firstOrNull { assetManager.list(it)?.isNotEmpty() == true }
+        val rootPath = nestedRoot ?: assetRoot
+        return calculateAssetDirSize(assetManager, rootPath)
+    }
+
+    private fun calculateAssetDirSize(assetManager: android.content.res.AssetManager, path: String): Long {
+        val children = assetManager.list(path).orEmpty()
+        if (children.isEmpty()) {
+            return runCatching { assetManager.openFd(path).length }.getOrElse {
+                runCatching {
+                    var size = 0L
+                    assetManager.open(path).use { input ->
+                        val buf = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val r = input.read(buf)
+                            if (r <= 0) break
+                            size += r
+                        }
+                    }
+                    size
+                }.getOrDefault(0L)
+            }
+        }
+        var total = 0L
+        for (child in children) {
+            total += calculateAssetDirSize(assetManager, if (path.isBlank()) child else "$path/$child")
+        }
+        return total
+    }
+
+    private fun copyModelAssets(
+        context: Context,
+        targetDir: File,
+        onBytesCopied: ((Long) -> Unit)? = null
+    ) {
         val assetManager = context.assets
         val directRootChildren = assetManager.list(assetRoot).orEmpty()
         val nestedRoot = OPTIONAL_TOP_LEVEL_WRAPPERS
@@ -88,20 +136,31 @@ class VoskModelManager(
             .firstOrNull { assetManager.list(it)?.isNotEmpty() == true }
 
         when {
-            nestedRoot != null -> copyAssetDirectory(context, nestedRoot, targetDir)
-            directRootChildren.isNotEmpty() -> copyAssetDirectory(context, assetRoot, targetDir)
+            nestedRoot != null -> copyAssetDirectory(context, nestedRoot, targetDir, onBytesCopied)
+            directRootChildren.isNotEmpty() -> copyAssetDirectory(context, assetRoot, targetDir, onBytesCopied)
             else -> throw IOException("模型资源目录为空或不存在: $assetRoot")
         }
     }
 
-    private fun copyAssetDirectory(context: Context, assetPath: String, targetDir: File) {
+    private fun copyAssetDirectory(
+        context: Context,
+        assetPath: String,
+        targetDir: File,
+        onBytesCopied: ((Long) -> Unit)? = null
+    ) {
         val assetManager = context.assets
         val children = assetManager.list(assetPath).orEmpty()
         if (children.isEmpty()) {
             targetDir.parentFile?.mkdirs()
             assetManager.open(assetPath).use { input ->
                 FileOutputStream(targetDir).use { output ->
-                    input.copyTo(output)
+                    val buf = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val read = input.read(buf)
+                        if (read <= 0) break
+                        output.write(buf, 0, read)
+                        onBytesCopied?.invoke(read.toLong())
+                    }
                 }
             }
             return
@@ -110,7 +169,7 @@ class VoskModelManager(
         for (child in children) {
             val childAssetPath = if (assetPath.isBlank()) child else "$assetPath/$child"
             val childTarget = File(targetDir, child)
-            copyAssetDirectory(context, childAssetPath, childTarget)
+            copyAssetDirectory(context, childAssetPath, childTarget, onBytesCopied)
         }
     }
 }

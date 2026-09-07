@@ -81,12 +81,40 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/modelStatusLabel"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Hy-MT 离线"
                     android:textColor="#32D67A"
                     android:textSize="16sp" />
             </LinearLayout>
+
+            <RadioGroup
+                android:id="@+id/modelRadioGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/radioHyMt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#32D67A"
+                    android:checked="true"
+                    android:text="Hy-MT 离线翻译（推荐，无需网络）"
+                    android:textColor="#F4F4F5"
+                    android:textSize="14sp" />
+
+                <RadioButton
+                    android:id="@+id/radioMlKit"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="#32D67A"
+                    android:text="ML Kit 在线翻译（需 Google 服务，质量更好）"
+                    android:textColor="#F4F4F5"
+                    android:textSize="14sp" />
+            </RadioGroup>
 
             <CheckBox
                 android:id="@+id/ttsSwitch"
@@ -194,10 +222,11 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/pipelineStatusText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
-                android:text="●   音频输入\n     初始化中\n\n●   语音识别\n     等待中\n\n●   翻译引擎\n     等待中"
+                android:text="●   音频输入\n     等待启动\n\n●   语音识别\n     等待启动\n\n●   翻译引擎\n     等待启动"
                 android:textColor="#A1A1AA"
                 android:textSize="16sp" />
         </LinearLayout>
