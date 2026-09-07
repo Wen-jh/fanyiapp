@@ -31,6 +31,8 @@ import androidx.core.content.ContextCompat
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
+import com.google.mlkit.common.model.RemoteModelManager
+import com.google.mlkit.nl.translate.TranslateRemoteModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -290,13 +292,49 @@ class SubtitleOverlayService : Service() {
         val startedAt = SystemClock.elapsedRealtime()
         fun elapsedSeconds(): Long = ((SystemClock.elapsedRealtime() - startedAt) / 1000L).coerceAtLeast(0L)
 
+        // 用 RemoteModelManager 检测 ML Kit 模型是否已下载
+        val jaModel = TranslateRemoteModel.Builder(TranslateLanguage.JAPANESE).build()
+        val zhModel = TranslateRemoteModel.Builder(TranslateLanguage.CHINESE).build()
+        val modelManager = RemoteModelManager.getInstance()
+
+        suspend fun isModelDownloaded(): Boolean {
+            return runCatching {
+                val models = modelManager.getDownloadedModels(TranslateRemoteModel::class.java).await()
+                models.any { it.language == TranslateLanguage.JAPANESE } &&
+                    models.any { it.language == TranslateLanguage.CHINESE }
+            }.getOrDefault(false)
+        }
+
+        // ML Kit 模型约 30MB 每种语言，两种约 60MB
+        val estimatedTotalMb = 60L
+
         fun startDownloadStatusTicker() {
             translatorDownloadStatusJob?.cancel()
+            var lastDownloadedCheck = false
+            var stableChecks = 0
             translatorDownloadStatusJob = serviceScope.launch {
                 while (isActive && !isTranslatorReady) {
-                    translationState = "翻译模型下载中（已耗时 ${elapsedSeconds()}s）"
+                    // 检测模型是否已存在（已下载完成的情况）
+                    val alreadyDownloaded = isModelDownloaded()
+                    if (alreadyDownloaded && !lastDownloadedCheck) {
+                        stableChecks++
+                        if (stableChecks >= 2) {
+                            translationState = "ML Kit 模型已就绪"
+                            renderPipeline()
+                            break
+                        }
+                    } else if (!alreadyDownloaded) {
+                        stableChecks = 0
+                    }
+                    lastDownloadedCheck = alreadyDownloaded
+
+                    translationState = if (alreadyDownloaded) {
+                        "ML Kit 模型已就绪"
+                    } else {
+                        "ML Kit 模型下载中（约${estimatedTotalMb}MB，已耗时 ${elapsedSeconds()}s）"
+                    }
                     renderPipeline()
-                    delay(1000)
+                    delay(2000)
                 }
             }
         }
@@ -307,28 +345,37 @@ class SubtitleOverlayService : Service() {
         }
 
         try {
-            val hasInternet = hasValidatedInternet()
-            if (!hasInternet) {
-                translationState = "无法连接网络，ML Kit 模型下载未开始"
+            // 先检查模型是否已下载（避免重复下载）
+            val alreadyDownloaded = isModelDownloaded()
+            if (alreadyDownloaded) {
+                translationState = "ML Kit 模型已就绪"
                 renderPipeline()
+                isTranslatorReady = true
+                translationState = "ML Kit 翻译已就绪"
             } else {
-                translationState = "网络已连接，正在请求 ML Kit 模型下载"
+                val hasInternet = hasValidatedInternet()
+                if (!hasInternet) {
+                    translationState = "无法连接网络，ML Kit 模型下载未开始"
+                    renderPipeline()
+                } else {
+                    translationState = "网络已连接，正在请求 ML Kit 模型下载"
+                    renderPipeline()
+                }
+                translationState = "开始下载翻译模型（约60MB）"
                 renderPipeline()
+                startDownloadStatusTicker()
+                // ML Kit 下载加 90 秒超时，避免无限等待
+                withContext(Dispatchers.IO) {
+                    withTimeoutOrNull(90_000L) {
+                        translator?.downloadModelIfNeeded()?.await()
+                    } ?: throw java.util.concurrent.TimeoutException("ML Kit 模型下载超时（90s）")
+                }
+                stopDownloadStatusTicker()
+                translationState = "翻译模型已下载，正在初始化"
+                renderPipeline()
+                isTranslatorReady = true
+                translationState = "ML Kit 翻译已就绪"
             }
-            translationState = "开始下载翻译模型"
-            renderPipeline()
-            startDownloadStatusTicker()
-            // ML Kit 下载加 90 秒超时，避免无限等待
-            withContext(Dispatchers.IO) {
-                withTimeoutOrNull(90_000L) {
-                    translator?.downloadModelIfNeeded()?.await()
-                } ?: throw java.util.concurrent.TimeoutException("ML Kit 模型下载超时（90s）")
-            }
-            stopDownloadStatusTicker()
-            translationState = "翻译模型已下载，正在初始化"
-            renderPipeline()
-            isTranslatorReady = true
-            translationState = "ML Kit 翻译已就绪"
         } catch (error: Throwable) {
             stopDownloadStatusTicker()
             isTranslatorReady = false
