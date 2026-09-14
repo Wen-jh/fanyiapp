@@ -60,7 +60,8 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("gguf", "bin", "model", "txt")
+        // onnx 为 int8 量化模型，压缩收益极低，不压缩可显著加快首次释放到私有目录
+        noCompress += listOf("gguf", "bin", "model", "txt", "onnx", "fst")
     }
 }
 
@@ -81,6 +82,9 @@ dependencies {
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
     implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
     implementation("com.alphacephei:vosk-android:0.3.75")
+
+    // 内置离线语音合成：sherpa-onnx 预编译 AAR（由 CI 下载到 app/libs/）
+    implementation(files("libs/sherpa-onnx.aar"))
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

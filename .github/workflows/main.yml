@@ -51,6 +51,35 @@ jobs:
             'https://modelscope.cn/models/AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF/resolve/master/Hy-MT1.5-1.8B-1.25bit.gguf'
           stat -c '%n %s bytes' app/src/main/assets/hy_mt/Hy-MT1.5-1.8B-1.25bit.gguf
 
+      - name: Download sherpa-onnx AAR (offline TTS engine)
+        run: |
+          mkdir -p app/libs
+          curl -L --fail --retry 3 --max-time 1800 \
+            -o app/libs/sherpa-onnx.aar \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          ls -lh app/libs/sherpa-onnx.aar
+          echo "=== AAR 中的 TTS 类与 native 库 ==="
+          unzip -l app/libs/sherpa-onnx.aar | grep -i -E "OfflineTts|classes.jar" | head -20
+          unzip -l app/libs/sherpa-onnx.aar | grep -E "\.so$" | head -20
+
+      - name: Download offline TTS models (Chinese + English)
+        run: |
+          mkdir -p /tmp/tts-models
+          cd /tmp/tts-models
+          curl -L --fail --retry 3 --max-time 1800 -o zh.tar.bz2 \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-zh_CN-xiao_ya-medium-int8.tar.bz2
+          curl -L --fail --retry 3 --max-time 1800 -o en.tar.bz2 \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium-int8.tar.bz2
+          tar -xjf zh.tar.bz2
+          tar -xjf en.tar.bz2
+          ls -d vits-piper-*
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/assets/tts"
+          rm -rf "$GITHUB_WORKSPACE/app/src/main/assets/tts/zh" "$GITHUB_WORKSPACE/app/src/main/assets/tts/en"
+          mv vits-piper-zh_CN-xiao_ya-medium-int8 "$GITHUB_WORKSPACE/app/src/main/assets/tts/zh"
+          mv vits-piper-en_US-lessac-medium-int8 "$GITHUB_WORKSPACE/app/src/main/assets/tts/en"
+          echo "=== 打包进 APK 的语音模型 ==="
+          du -sh "$GITHUB_WORKSPACE/app/src/main/assets/tts/zh" "$GITHUB_WORKSPACE/app/src/main/assets/tts/en"
+
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.7
 

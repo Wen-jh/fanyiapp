@@ -411,6 +411,21 @@ class ConversationTranslationActivity : AppCompatActivity() {
     private fun speak(text: String) {
         val content = text.trim()
         if (content.isBlank()) return
+
+        // 中/英优先走内置离线语音：不依赖系统 TTS 引擎，也不需要语音包
+        val code = targetLanguage.code
+        if (OfflineTtsEngine.supports(code)) {
+            if (offlineTts.speak(content, code)) return
+            if (offlineTts.isPreparing) {
+                toast(getString(R.string.conversation_tts_preparing, offlineTts.prepareProgress))
+                return
+            }
+        }
+        speakWithSystemTts(content)
+    }
+
+    /** 系统 TTS 兜底：适用于内置模型未覆盖的语言，或内置模型不可用时 */
+    private fun speakWithSystemTts(content: String) {
         if (!applyTtsLanguage()) {
             toast(getString(R.string.conversation_tts_unsupported))
             return

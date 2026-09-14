@@ -9,3 +9,5 @@ captures/
 .cxx/
 _artifacts/
 app/src/main/assets/hy_mt/*
+app/src/main/assets/tts/*
+app/libs/*.aar
