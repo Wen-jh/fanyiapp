@@ -8,14 +8,13 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.view.Gravity
+import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.Window
-import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -25,13 +24,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-import android.view.LayoutInflater
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 /**
- * 对话翻译：麦克风语音输入 -> 离线翻译 -> 语音朗读。
- * 与实时字幕翻译（SubtitleControlActivity / SubtitleOverlayService）完全独立，互不影响。
+ * 对话翻译：麦克风语音输入 -> 离线识别 -> 离线翻译 -> 语音朗读。
+ *
+ * 识别与翻译均为内置离线模型（sherpa-onnx Whisper + Hy-MT），
+ * 不依赖系统语音识别服务、不依赖系统 TTS 语音包、不需要联网。
+ * 与实时字幕翻译（SubtitleControlActivity / SubtitleOverlayService）完全独立。
  */
 class ConversationTranslationActivity : AppCompatActivity() {
 
@@ -49,78 +50,27 @@ class ConversationTranslationActivity : AppCompatActivity() {
         HyMtLanguageSupport.findByCode("en") ?: HyMtLanguageSupport.defaultTarget
 
     private val translationEngine by lazy { HyMtTranslationEngine(applicationContext) }
-
-    private var speechRecognizer: SpeechRecognizer? = null
-    private var isListening = false
+    private val asrEngine by lazy { OfflineAsrEngine.get(applicationContext) }
+    private val offlineTts by lazy { OfflineTtsEngine.get(applicationContext) }
 
     private var textToSpeech: TextToSpeech? = null
     private var ttsReady = false
 
-    /** 内置离线语音（中/英），不依赖系统语音包 */
-    private val offlineTts by lazy { OfflineTtsEngine.get(applicationContext) }
+    private var emptyHintView: View? = null
 
-    private var emptyHintView: TextView? = null
+    /** 短于该阈值视为"点击"模式：开始录音后保持，等待再次点击结束 */
+    private val longPressThresholdMs = 500L
+    private var pressStartedAt = 0L
+    private var startedByCurrentPress = false
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            startListening()
+            beginRecording()
         } else {
             toast(getString(R.string.conversation_permission_needed))
         }
-    }
-
-    private val recognitionListener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {
-            micHintText.text = getString(R.string.conversation_listening)
-        }
-
-        override fun onBeginningOfSpeech() = Unit
-
-        override fun onRmsChanged(rmsdB: Float) = Unit
-
-        override fun onBufferReceived(buffer: ByteArray?) = Unit
-
-        override fun onEndOfSpeech() {
-            micHintText.text = getString(R.string.conversation_recognizing)
-        }
-
-        override fun onError(error: Int) {
-            isListening = false
-            updateMicVisual(false)
-            val message = when (error) {
-                SpeechRecognizer.ERROR_NO_MATCH,
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> getString(R.string.conversation_no_result)
-                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> getString(R.string.conversation_permission_needed)
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "识别服务忙，请稍后再试"
-                SpeechRecognizer.ERROR_NETWORK,
-                SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "语音识别网络异常"
-                else -> "语音识别失败（错误码 $error）"
-            }
-            micHintText.text = getString(R.string.conversation_mic_hint)
-            toast(message)
-        }
-
-        override fun onResults(results: Bundle?) {
-            isListening = false
-            updateMicVisual(false)
-            micHintText.text = getString(R.string.conversation_mic_hint)
-            val text = results
-                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull()
-                ?.trim()
-                .orEmpty()
-            if (text.isBlank()) {
-                toast(getString(R.string.conversation_no_result))
-                return
-            }
-            handleRecognizedText(text)
-        }
-
-        override fun onPartialResults(partialResults: Bundle?) = Unit
-
-        override fun onEvent(eventType: Int, params: Bundle?) = Unit
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -144,24 +94,21 @@ class ConversationTranslationActivity : AppCompatActivity() {
 
         findViewById<ImageButton>(R.id.backButton).setOnClickListener { finish() }
         findViewById<ImageButton>(R.id.clearButton).setOnClickListener { clearConversation() }
-        sourceLanguageText.setOnClickListener { showLanguagePicker(selectingSource = true) }
-        targetLanguageText.setOnClickListener { showLanguagePicker(selectingSource = false) }
+        findViewById<View>(R.id.sourceLanguageChip).setOnClickListener { showLanguagePicker(true) }
+        findViewById<View>(R.id.targetLanguageChip).setOnClickListener { showLanguagePicker(false) }
         findViewById<ImageButton>(R.id.swapLanguageButton).setOnClickListener { swapLanguages() }
-        micButton.setOnClickListener { onMicClicked() }
+        bindMicGesture()
 
         updateLanguageLabels()
         showEmptyHint()
         initTextToSpeech()
-        prepareEngine()
+        prepareTranslationEngine()
+        prepareAsrEngine()
         offlineTts.prepare()
     }
 
     override fun onDestroy() {
-        speechRecognizer?.let { recognizer ->
-            runCatching { recognizer.cancel() }
-            runCatching { recognizer.destroy() }
-        }
-        speechRecognizer = null
+        asrEngine.cancelRecording()
         textToSpeech?.let { tts ->
             runCatching { tts.stop() }
             runCatching { tts.shutdown() }
@@ -172,60 +119,94 @@ class ConversationTranslationActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun onMicClicked() {
-        if (isListening) {
-            stopListening()
-            return
+    // ------------------------------------------------------------------
+    // 麦克风交互：点击 / 长按说话
+    // ------------------------------------------------------------------
+
+    private fun bindMicGesture() {
+        micButton.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    pressStartedAt = SystemClock.elapsedRealtime()
+                    if (!asrEngine.isRecording) {
+                        beginRecording()
+                        startedByCurrentPress = true
+                    } else {
+                        // 已经在录音：这次按下属于"点击模式"的结束点击
+                        startedByCurrentPress = false
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val duration = SystemClock.elapsedRealtime() - pressStartedAt
+                    if (asrEngine.isRecording) {
+                        val isSecondClick = !startedByCurrentPress
+                        val isLongPressRelease = startedByCurrentPress && duration >= longPressThresholdMs
+                        if (isSecondClick || isLongPressRelease) {
+                            finishRecording()
+                        }
+                        // 短按开始：保持录音，等待用户再次点击结束
+                    }
+                    true
+                }
+
+                else -> false
+            }
         }
+    }
+
+    private fun beginRecording() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
-        startListening()
-    }
-
-    private fun startListening() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            toast(getString(R.string.conversation_speech_unavailable))
+        if (!asrEngine.prepared) {
+            toast(getString(R.string.conversation_asr_not_ready))
             return
         }
-        if (speechRecognizer == null) {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-                setRecognitionListener(recognitionListener)
-            }
+        asrEngine.warmUp(sourceLanguage.code)
+        if (!asrEngine.startRecording()) {
+            toast(getString(R.string.conversation_record_failed))
+            return
         }
-        val languageTag = speechTagFor(sourceLanguage.code)
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageTag)
-            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, languageTag)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-        }
-        runCatching { speechRecognizer?.startListening(intent) }
-            .onFailure { toast("无法启动语音识别：${it.message ?: "未知错误"}") }
-        isListening = true
         updateMicVisual(true)
         micHintText.text = getString(R.string.conversation_listening)
     }
 
-    private fun stopListening() {
-        runCatching { speechRecognizer?.stopListening() }
-        isListening = false
+    private fun finishRecording() {
         updateMicVisual(false)
-        micHintText.text = getString(R.string.conversation_mic_hint)
+        micHintText.text = getString(R.string.conversation_recognizing)
+        asrEngine.stopAndRecognize(
+            languageCode = sourceLanguage.code,
+            onResult = { text -> handleRecognizedText(text) },
+            onError = { message ->
+                updateMicVisual(false)
+                micHintText.text = getString(R.string.conversation_mic_hint)
+                toast(message)
+            }
+        )
     }
 
-    private fun updateMicVisual(listening: Boolean) {
-        micButton.alpha = if (listening) 0.55f else 1f
+    private fun updateMicVisual(recording: Boolean) {
+        micButton.setBackgroundResource(
+            if (recording) R.drawable.bg_conv_mic_active else R.drawable.bg_conv_mic
+        )
     }
+
+    // ------------------------------------------------------------------
+    // 识别 -> 翻译 -> 朗读
+    // ------------------------------------------------------------------
 
     private fun handleRecognizedText(sourceText: String) {
+        micHintText.text = getString(R.string.conversation_mic_hint)
         val bubble = appendBubble(sourceText, getString(R.string.conversation_translating))
+        bubble.translatedView.setTextColor(
+            ContextCompat.getColor(this, R.color.conv_text_secondary)
+        )
+
         lifecycleScope.launch {
             val state = translationEngine.currentState()
             if (state !is EngineState.Ready) {
@@ -242,7 +223,8 @@ class ConversationTranslationActivity : AppCompatActivity() {
                     targetLanguage = targetLanguage.promptName
                 )
             }.getOrElse { error ->
-                bubble.translatedView.text = "${getString(R.string.conversation_translate_failed)}：${error.message ?: "未知错误"}"
+                bubble.translatedView.text =
+                    "${getString(R.string.conversation_translate_failed)}：${error.message ?: "未知错误"}"
                 return@launch
             }
             val translated = result.text.trim()
@@ -251,6 +233,9 @@ class ConversationTranslationActivity : AppCompatActivity() {
                 return@launch
             }
             bubble.translatedView.text = translated
+            bubble.translatedView.setTextColor(
+                ContextCompat.getColor(this@ConversationTranslationActivity, R.color.conv_text_primary)
+            )
             bubble.playButton.alpha = 1f
             bubble.playButton.isEnabled = true
             bubble.playButton.setOnClickListener { speak(translated) }
@@ -275,7 +260,7 @@ class ConversationTranslationActivity : AppCompatActivity() {
         val playButton = bubble.findViewById<ImageButton>(R.id.bubblePlayButton)
         sourceView.text = sourceText
         translatedView.text = translatedText
-        playButton.alpha = 0.5f
+        playButton.alpha = 0.4f
         playButton.isEnabled = false
         conversationContainer.addView(bubble)
         scrollToBottom()
@@ -284,13 +269,8 @@ class ConversationTranslationActivity : AppCompatActivity() {
 
     private fun showEmptyHint() {
         if (emptyHintView != null) return
-        val hint = TextView(this).apply {
-            text = getString(R.string.conversation_empty_hint)
-            setTextColor(Color.parseColor("#77777F"))
-            textSize = 15f
-            gravity = Gravity.CENTER
-            setPadding(0, dp(48), 0, 0)
-        }
+        val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
+        val hint = inflater.inflate(R.layout.item_conversation_empty, conversationContainer, false)
         conversationContainer.addView(hint)
         emptyHintView = hint
     }
@@ -301,6 +281,7 @@ class ConversationTranslationActivity : AppCompatActivity() {
     }
 
     private fun clearConversation() {
+        if (conversationContainer.childCount == 0 || emptyHintView != null) return
         conversationContainer.removeAllViews()
         emptyHintView = null
         showEmptyHint()
@@ -311,6 +292,10 @@ class ConversationTranslationActivity : AppCompatActivity() {
         conversationScroll.post { conversationScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
+    // ------------------------------------------------------------------
+    // 语言
+    // ------------------------------------------------------------------
+
     private fun swapLanguages() {
         val previousSource = sourceLanguage
         sourceLanguage = targetLanguage
@@ -320,12 +305,15 @@ class ConversationTranslationActivity : AppCompatActivity() {
     }
 
     private fun updateLanguageLabels() {
-        sourceLanguageText.text = sourceLanguage.displayName
-        targetLanguageText.text = targetLanguage.displayName
+        sourceLanguageText.text = sourceLanguage.uiLabel
+        targetLanguageText.text = targetLanguage.uiLabel
     }
 
     private fun onLanguageChanged() {
         applyTtsLanguage()
+        if (asrEngine.prepared) {
+            asrEngine.warmUp(sourceLanguage.code)
+        }
     }
 
     private fun showLanguagePicker(selectingSource: Boolean) {
@@ -353,8 +341,8 @@ class ConversationTranslationActivity : AppCompatActivity() {
         HyMtLanguageSupport.supportedLanguages.forEach { language ->
             val selected = language.code == current.code
             val row = TextView(this).apply {
-                text = language.displayName
-                setTextColor(if (selected) Color.parseColor("#2F8CFF") else Color.parseColor("#F4F4F5"))
+                text = language.uiLabel
+                setTextColor(if (selected) Color.parseColor("#0B84FF") else Color.parseColor("#F4F4F5"))
                 textSize = 17f
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(16), 0, dp(16), 0)
@@ -365,7 +353,10 @@ class ConversationTranslationActivity : AppCompatActivity() {
                     dialog.dismiss()
                 }
             }
-            listContainer.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54)))
+            listContainer.addView(
+                row,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54))
+            )
         }
 
         val scroll = ScrollView(this).apply { addView(listContainer) }
@@ -382,19 +373,54 @@ class ConversationTranslationActivity : AppCompatActivity() {
         }
     }
 
-    private fun prepareEngine() {
+    // ------------------------------------------------------------------
+    // 引擎准备
+    // ------------------------------------------------------------------
+
+    private fun prepareTranslationEngine() {
         lifecycleScope.launch {
-            engineStatusText.text = getString(R.string.conversation_engine_preparing)
             val result = runCatching { translationEngine.prepareIfNeeded() }.getOrElse { error ->
                 PreparationResult(false, error.message ?: "初始化异常")
             }
-            engineStatusText.text = if (result.ready) {
-                getString(R.string.conversation_engine_ready)
-            } else {
-                "${getString(R.string.conversation_engine_failed)}：${result.message}"
+            if (!result.ready) {
+                showStatus("${getString(R.string.conversation_engine_failed)}：${result.message}")
             }
         }
     }
+
+    private fun prepareAsrEngine() {
+        if (asrEngine.prepared) {
+            asrEngine.warmUp(sourceLanguage.code)
+            return
+        }
+        if (asrEngine.prepareError != null) {
+            showStatus(asrEngine.statusText())
+            return
+        }
+        asrEngine.prepare { percent ->
+            runOnUiThread {
+                if (asrEngine.prepared) {
+                    hideStatus()
+                    asrEngine.warmUp(sourceLanguage.code)
+                } else {
+                    showStatus(getString(R.string.conversation_asr_preparing, percent))
+                }
+            }
+        }
+    }
+
+    private fun showStatus(message: String) {
+        engineStatusText.text = message
+        engineStatusText.visibility = View.VISIBLE
+    }
+
+    private fun hideStatus() {
+        engineStatusText.visibility = View.GONE
+    }
+
+    // ------------------------------------------------------------------
+    // 朗读：内置离线优先，系统 TTS 兜底
+    // ------------------------------------------------------------------
 
     private fun initTextToSpeech() {
         textToSpeech = TextToSpeech(applicationContext) { status ->
@@ -417,7 +443,6 @@ class ConversationTranslationActivity : AppCompatActivity() {
         val content = text.trim()
         if (content.isBlank()) return
 
-        // 中/英优先走内置离线语音：不依赖系统 TTS 引擎，也不需要语音包
         val code = targetLanguage.code
         if (OfflineTtsEngine.supports(code)) {
             if (offlineTts.speak(content, code)) return
@@ -429,23 +454,17 @@ class ConversationTranslationActivity : AppCompatActivity() {
         speakWithSystemTts(content)
     }
 
-    /** 系统 TTS 兜底：适用于内置模型未覆盖的语言，或内置模型不可用时 */
     private fun speakWithSystemTts(content: String) {
         if (!applyTtsLanguage()) {
             toast(getString(R.string.conversation_tts_unsupported))
             return
         }
-        textToSpeech?.speak(content, TextToSpeech.QUEUE_FLUSH, null, "conversation-${System.currentTimeMillis()}")
-    }
-
-    private fun speechTagFor(code: String): String = when (code) {
-        "zh" -> "zh-CN"
-        "zh-Hant" -> "zh-TW"
-        "yue" -> "yue-HK"
-        "en" -> "en-US"
-        "ja" -> "ja-JP"
-        "ko" -> "ko-KR"
-        else -> code
+        textToSpeech?.speak(
+            content,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "conversation-${System.currentTimeMillis()}"
+        )
     }
 
     private fun localeFor(code: String): Locale = when (code) {

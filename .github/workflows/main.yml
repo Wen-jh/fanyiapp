@@ -80,6 +80,24 @@ jobs:
           echo "=== 打包进 APK 的语音模型 ==="
           du -sh "$GITHUB_WORKSPACE/app/src/main/assets/tts/zh" "$GITHUB_WORKSPACE/app/src/main/assets/tts/en"
 
+      - name: Download offline ASR model (Whisper tiny, multilingual)
+        run: |
+          mkdir -p /tmp/asr-models
+          cd /tmp/asr-models
+          curl -L --fail --retry 3 --max-time 3600 -o whisper.tar.bz2 \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2
+          tar -xjf whisper.tar.bz2
+          ASR_DIR="$GITHUB_WORKSPACE/app/src/main/assets/asr"
+          mkdir -p "$ASR_DIR"
+          rm -f "$ASR_DIR"/*
+          cp sherpa-onnx-whisper-tiny/tiny-encoder.int8.onnx \
+             sherpa-onnx-whisper-tiny/tiny-decoder.int8.onnx \
+             sherpa-onnx-whisper-tiny/tiny-tokens.txt \
+             "$ASR_DIR/"
+          echo "=== 打包进 APK 的识别模型（int8）==="
+          du -sh "$ASR_DIR"
+          ls -lh "$ASR_DIR"
+
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.7
 

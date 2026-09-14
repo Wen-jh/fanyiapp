@@ -3,10 +3,13 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="12dp"
-    android:background="@drawable/bg_conversation_bubble"
+    android:background="@drawable/bg_conv_bubble"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:padding="16dp">
+    android:paddingStart="16dp"
+    android:paddingTop="14dp"
+    android:paddingEnd="12dp"
+    android:paddingBottom="14dp">
 
     <LinearLayout
         android:layout_width="0dp"
@@ -18,16 +21,17 @@
             android:id="@+id/bubbleSourceText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#8C8C92"
+            android:lineSpacingExtra="2dp"
+            android:textColor="@color/conv_text_secondary"
             android:textSize="13sp" />
 
         <TextView
             android:id="@+id/bubbleTranslatedText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:lineSpacingExtra="3dp"
-            android:textColor="#FFFFFF"
+            android:layout_marginTop="7dp"
+            android:lineSpacingExtra="4dp"
+            android:textColor="@color/conv_text_primary"
             android:textSize="17sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -36,10 +40,11 @@
         android:id="@+id/bubblePlayButton"
         android:layout_width="34dp"
         android:layout_height="34dp"
-        android:layout_marginStart="12dp"
-        android:background="@drawable/bg_conversation_play"
-        android:contentDescription="播放译文"
+        android:layout_marginStart="10dp"
+        android:background="@drawable/bg_conv_play"
+        android:contentDescription="@string/conversation_play"
         android:padding="8dp"
+        android:scaleType="fitCenter"
         android:src="@drawable/ic_conversation_play" />
 
 </LinearLayout>

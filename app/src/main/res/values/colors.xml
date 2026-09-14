@@ -12,6 +12,17 @@
     <color name="home_card_large">#242424</color>
     <color name="home_border">#67BFFF</color>
     <color name="home_chip">#151515</color>
+    <color name="conv_chip">#1A1A1C</color>
+    <color name="conv_chip_stroke">#26262A</color>
+    <color name="conv_bubble">#161618</color>
+    <color name="conv_bubble_stroke">#232326</color>
+    <color name="conv_play_bg">#2A2A2C</color>
+    <color name="conv_divider">#1C1C1F</color>
+    <color name="conv_text_primary">#FFFFFF</color>
+    <color name="conv_text_secondary">#8A8A8E</color>
+    <color name="conv_text_tertiary">#5A5A5E</color>
+    <color name="conv_mic">#0B84FF</color>
+    <color name="conv_mic_active">#FF453A</color>
     <color name="home_icon_blue">#0B84FF</color>
     <color name="home_icon_green">#05C83E</color>
     <color name="home_icon_purple">#684CFF</color>
