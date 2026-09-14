@@ -4,8 +4,8 @@ import android.os.Bundle
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.Spinner
 import android.widget.TextView
@@ -18,8 +18,8 @@ class TextTranslationActivity : AppCompatActivity() {
     private lateinit var sourceLanguageSpinner: Spinner
     private lateinit var targetLanguageSpinner: Spinner
     private lateinit var inputEditText: EditText
-    private lateinit var translateButton: Button
-    private lateinit var swapButton: Button
+    private lateinit var translateButton: TextView
+    private lateinit var swapButton: TextView
     private lateinit var resultTextView: TextView
     private lateinit var statusTextView: TextView
     private lateinit var modelStatusTextView: TextView
@@ -50,6 +50,8 @@ class TextTranslationActivity : AppCompatActivity() {
         modelStatusTextView = findViewById(R.id.modelStatusText)
         progressBar = findViewById(R.id.modelProgressBar)
         translationEngine = HyMtTranslationEngine(applicationContext)
+
+        findViewById<ImageButton>(R.id.textBackButton).setOnClickListener { finish() }
 
         restoreState(savedInstanceState)
         setupLanguageSpinners()
@@ -107,10 +109,10 @@ class TextTranslationActivity : AppCompatActivity() {
     private fun setupLanguageSpinners() {
         val adapter = ArrayAdapter(
             this,
-            android.R.layout.simple_spinner_item,
+            R.layout.item_spinner_language,
             languageOptions.map { it.displayName }
         ).also {
-            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            it.setDropDownViewResource(R.layout.item_spinner_language_dropdown)
         }
         sourceLanguageSpinner.adapter = adapter
         targetLanguageSpinner.adapter = adapter

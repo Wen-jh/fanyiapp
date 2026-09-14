@@ -80,10 +80,13 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SubtitleControlActivity::class.java))
         }
         findViewById<View>(R.id.documentTranslateButton).setOnClickListener {
-            Toast.makeText(this, R.string.main_coming_soon, Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, DocumentTranslationActivity::class.java))
         }
         findViewById<View>(R.id.screenTranslateButton).setOnClickListener {
             Toast.makeText(this, R.string.main_coming_soon, Toast.LENGTH_SHORT).show()
+        }
+        findViewById<View>(R.id.realtimeSubtitleButton).setOnClickListener {
+            startActivity(Intent(this, SubtitleControlActivity::class.java))
         }
         findViewById<View>(R.id.settingsButton).setOnClickListener {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
