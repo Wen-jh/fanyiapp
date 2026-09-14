@@ -31,6 +31,11 @@
         </provider>
 
         <activity
+            android:name=".ConversationTranslationActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".TextTranslationActivity"
             android:exported="false" />
 

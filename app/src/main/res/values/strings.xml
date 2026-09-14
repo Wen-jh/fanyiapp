@@ -57,4 +57,21 @@
     <string name="image_tips_label">使用建议</string>
     <string name="image_tips_body">1. 优先拍摄清晰、平整、光线充足的内容。\n2. 相册导入更适合截图、海报、菜单和文档。\n3. 首次进入页面时会准备内置 Hy-MT 离线模型，准备完成后无需联网即可翻译。\n4. 当前 OCR 识别链路仍以现有 ML Kit 方案为主，多语种翻译已接入 Hy-MT。\n5. 当前内置词库主要用于英文短句兜底，整段长文翻译仍以 Hy-MT 分段翻译结果为主。</string>
     <string name="content_desc_image_preview">待识别图片预览</string>
+
+    <string name="conversation_title">对话翻译</string>
+    <string name="conversation_mic_hint">点击说话</string>
+    <string name="conversation_listening">正在聆听…</string>
+    <string name="conversation_translating">正在翻译…</string>
+    <string name="conversation_engine_preparing">正在准备离线翻译引擎…</string>
+    <string name="conversation_engine_ready">离线翻译引擎已就绪</string>
+    <string name="conversation_engine_failed">离线翻译引擎准备失败</string>
+    <string name="conversation_speech_unavailable">当前设备没有可用的系统语音识别服务</string>
+    <string name="conversation_permission_needed">需要麦克风权限才能开始说话</string>
+    <string name="conversation_cleared">已清空对话</string>
+    <string name="conversation_tts_unsupported">目标语言暂无可用朗读语音</string>
+    <string name="conversation_empty_hint">点击底部麦克风按钮开始说话</string>
+    <string name="conversation_translate_failed">翻译失败</string>
+    <string name="conversation_no_result">没有识别到内容，请再试一次</string>
+    <string name="conversation_recognizing">识别中…</string>
+    <string name="conversation_play">播放译文</string>
 </resources>

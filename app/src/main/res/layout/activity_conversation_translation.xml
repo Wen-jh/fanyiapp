@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/home_background"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="22dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="22dp">
+
+        <ImageButton
+            android:id="@+id/backButton"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="@drawable/bg_subtitle_round_button"
+            android:contentDescription="返回"
+            android:padding="12dp"
+            android:src="@drawable/ic_subtitle_back" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_weight="1"
+            android:text="@string/conversation_title"
+            android:textColor="#F4F4F5"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/clearButton"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:background="@drawable/bg_subtitle_round_button"
+            android:contentDescription="清空对话"
+            android:padding="12dp"
+            android:src="@drawable/ic_conversation_clear" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/sourceLanguageText"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_home_chip"
+            android:gravity="center"
+            android:minWidth="120dp"
+            android:text="@string/main_language_source_default"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/swapLanguageButton"
+            android:layout_width="56dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/text_translation_swap"
+            android:padding="12dp"
+            android:src="@drawable/ic_home_swap" />
+
+        <TextView
+            android:id="@+id/targetLanguageText"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_home_chip"
+            android:gravity="center"
+            android:minWidth="120dp"
+            android:text="@string/main_language_target_default"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/engineStatusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:paddingStart="22dp"
+        android:paddingEnd="22dp"
+        android:text="@string/conversation_engine_preparing"
+        android:textColor="#8C8C92"
+        android:textSize="13sp" />
+
+    <ScrollView
+        android:id="@+id/conversationScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="10dp"
+        android:layout_weight="1"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp">
+
+        <LinearLayout
+            android:id="@+id/conversationContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="12dp" />
+
+    </ScrollView>
+
+    <TextView
+        android:id="@+id/micHintText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center"
+        android:text="@string/conversation_mic_hint"
+        android:textColor="#8C8C92"
+        android:textSize="14sp" />
+
+    <ImageButton
+        android:id="@+id/micButton"
+        android:layout_width="76dp"
+        android:layout_height="76dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="26dp"
+        android:background="@drawable/bg_conversation_mic"
+        android:contentDescription="@string/conversation_mic_hint"
+        android:padding="22dp"
+        android:src="@drawable/ic_home_mic" />
+
+</LinearLayout>

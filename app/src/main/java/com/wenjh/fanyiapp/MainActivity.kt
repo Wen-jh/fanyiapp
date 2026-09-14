@@ -69,7 +69,12 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, ImageTranslationActivity::class.java))
         }
         findViewById<View>(R.id.subtitleTranslateButton).setOnClickListener {
-            startActivity(Intent(this, SubtitleControlActivity::class.java))
+            startActivity(
+                Intent(this, ConversationTranslationActivity::class.java).apply {
+                    putExtra(ConversationTranslationActivity.EXTRA_SOURCE_LANGUAGE_CODE, sourceLanguage.code)
+                    putExtra(ConversationTranslationActivity.EXTRA_TARGET_LANGUAGE_CODE, targetLanguage.code)
+                }
+            )
         }
         findViewById<View>(R.id.voiceTranslateButton).setOnClickListener {
             startActivity(Intent(this, SubtitleControlActivity::class.java))
