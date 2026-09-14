@@ -56,6 +56,9 @@ class ConversationTranslationActivity : AppCompatActivity() {
     private var textToSpeech: TextToSpeech? = null
     private var ttsReady = false
 
+    /** 内置离线语音（中/英），不依赖系统语音包 */
+    private val offlineTts by lazy { OfflineTtsEngine.get(applicationContext) }
+
     private var emptyHintView: TextView? = null
 
     private val micPermissionLauncher = registerForActivityResult(
@@ -150,6 +153,7 @@ class ConversationTranslationActivity : AppCompatActivity() {
         showEmptyHint()
         initTextToSpeech()
         prepareEngine()
+        offlineTts.prepare()
     }
 
     override fun onDestroy() {
@@ -163,6 +167,7 @@ class ConversationTranslationActivity : AppCompatActivity() {
             runCatching { tts.shutdown() }
         }
         textToSpeech = null
+        offlineTts.stop()
         translationEngine.release()
         super.onDestroy()
     }
