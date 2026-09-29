@@ -68,35 +68,37 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
             error("Hy-MT native 推理尚未就绪")
         }
 
+        // 目标语言必须解析出来，才能校验模型有没有真的翻成目标语言
+        val targetOption = HyMtLanguageSupport.findByPromptName(targetLanguage)
+            ?: HyMtLanguageSupport.findByUiLabel(targetLanguage)
         val segments = splitForTranslation(text)
         val translatedSegments = mutableListOf<TranslatedSegment>()
         val rawSegments = mutableListOf<String>()
         var fallbackUsed = false
+        var languageRetryCount = 0
+        var languageMismatchCount = 0
 
         for (segment in segments) {
-            val prompt = HyMtPromptBuilder.build(
-                recognizedText = segment.text,
-                sourceLanguage = sourceLanguage,
-                targetLanguage = targetLanguage
-            )
-            val rawOutput = withContext(Dispatchers.Default) {
-                HyMtNativeBridge.translate(prompt, maxTokens = 384, temperature = 0.2f)
-            }
-            val cleaned = HyMtResultParser.clean(rawOutput)
-            val finalized = finalizeTranslationResult(
-                recognizedText = segment.text,
-                cleanedOutput = cleaned,
-                rawOutput = rawOutput,
-                sourceLanguage = sourceLanguage,
-                targetLanguage = targetLanguage
+            val promptSource = resolvePromptSource(sourceLanguage, segment.text)
+            val outcome = translateSegment(
+                segmentText = segment.text,
+                promptSource = promptSource,
+                targetLanguage = targetLanguage,
+                targetOption = targetOption
             )
             translatedSegments += TranslatedSegment(
-                text = finalized.text,
+                text = outcome.text,
                 breakType = segment.breakType
             )
-            rawSegments += rawOutput
-            if (finalized.backend == "builtin-fallback") {
+            rawSegments += outcome.rawOutput
+            if (outcome.backend == "builtin-fallback") {
                 fallbackUsed = true
+            }
+            if (outcome.retried) {
+                languageRetryCount++
+            }
+            if (outcome.mismatched) {
+                languageMismatchCount++
             }
         }
 
@@ -104,9 +106,105 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
         TranslationResult(
             text = mergeTranslatedSegments(translatedSegments),
             backend = if (fallbackUsed) "builtin-fallback" else "hy-mt-native",
-            rawOutput = rawSegments.joinToString("\n---\n")
+            rawOutput = rawSegments.joinToString("\n---\n"),
+            statusMessage = when {
+                languageMismatchCount > 0 ->
+                    "输出语言可能不是${targetOption?.uiLabel ?: targetLanguage}，已用强指令重试一次仍未完全通过校验"
+                languageRetryCount > 0 ->
+                    "首次输出不是${targetOption?.uiLabel ?: targetLanguage}，已自动按目标语言重试一次"
+                else -> null
+            }
         )
     }
+
+    /**
+     * 单段翻译：先按官方模板翻一次，输出语言不对就用强指令再翻一次。
+     *
+     * 1.25bit 量化的 Hy-MT 经常无视指令直接输出中文，这一步是兜底。
+     */
+    private suspend fun translateSegment(
+        segmentText: String,
+        promptSource: String?,
+        targetLanguage: String,
+        targetOption: HyMtLanguageSupport.LanguageOption?
+    ): SegmentOutcome {
+        val rawOutput = generate(HyMtPromptBuilder.build(segmentText, promptSource, targetLanguage))
+        val first = finalizeTranslationResult(
+            recognizedText = segmentText,
+            cleanedOutput = HyMtResultParser.clean(rawOutput),
+            rawOutput = rawOutput,
+            sourceLanguage = promptSource.orEmpty(),
+            targetLanguage = targetLanguage
+        )
+        if (targetOption == null ||
+            HyMtLanguageSupport.outputMatchesTarget(first.text, targetOption.code, segmentText)
+        ) {
+            return SegmentOutcome(first.text, first.backend, rawOutput, retried = false, mismatched = false)
+        }
+
+        val retryRaw = runCatching {
+            generate(
+                HyMtPromptBuilder.buildStrict(
+                    recognizedText = segmentText,
+                    targetLanguage = targetOption.promptName,
+                    targetLocalName = targetOption.uiLabel
+                )
+            )
+        }.getOrElse {
+            return SegmentOutcome(first.text, first.backend, rawOutput, retried = true, mismatched = true)
+        }
+        val second = finalizeTranslationResult(
+            recognizedText = segmentText,
+            cleanedOutput = HyMtResultParser.clean(retryRaw),
+            rawOutput = retryRaw,
+            sourceLanguage = promptSource.orEmpty(),
+            targetLanguage = targetLanguage
+        )
+        val matched = HyMtLanguageSupport.outputMatchesTarget(second.text, targetOption.code, segmentText)
+        return SegmentOutcome(
+            text = second.text,
+            backend = second.backend,
+            rawOutput = rawOutput + "\n--- language-retry ---\n" + retryRaw,
+            retried = true,
+            mismatched = !matched
+        )
+    }
+
+    private suspend fun generate(prompt: String): String = withContext(Dispatchers.Default) {
+        HyMtNativeBridge.translate(prompt, maxTokens = 384, temperature = 0.2f)
+    }
+
+    /**
+     * 决定提示词里要不要写 "from X"。
+     *
+     * 页面默认源语言是英语，用户却常常直接粘贴中文，这种情况下还照写
+     * "from English" 会把模型带偏；所以按原文实际文字系统校验一遍，
+     * 对不上就按实际的来，判不出来就干脆不写源语言。
+     */
+    private fun resolvePromptSource(declaredName: String?, text: String): String? {
+        val declared = HyMtLanguageSupport.findByPromptName(declaredName)
+            ?: HyMtLanguageSupport.findByUiLabel(declaredName)
+        val detected = HyMtLanguageSupport.detectLanguageByScript(text)
+        if (declared == null || declared.code == HyMtLanguageSupport.autoDetect.code) {
+            return detected?.promptName
+        }
+        if (detected == null) {
+            return if (declared.ocrScript == HyMtLanguageSupport.OcrScript.LATIN) {
+                declared.promptName
+            } else {
+                null
+            }
+        }
+        return if (declared.ocrScript != detected.ocrScript) detected.promptName else declared.promptName
+    }
+
+    private data class SegmentOutcome(
+        val text: String,
+        val backend: String,
+        val rawOutput: String,
+        val retried: Boolean,
+        val mismatched: Boolean
+    )
 
     override fun currentState(): EngineState = when (val managerState = modelManager.currentState()) {
         is EngineState.Idle -> state

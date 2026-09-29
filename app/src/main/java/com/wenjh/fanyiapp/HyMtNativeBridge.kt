@@ -3,9 +3,17 @@ package com.wenjh.fanyiapp
 import com.arm.aichat.internal.InferenceEngineImpl
 
 object HyMtNativeBridge {
+    /**
+     * 系统提示词只说明角色，绝不能出现某种具体语言的名字。
+     *
+     * 旧版本写的是「请把用户给出的 OCR 文本翻译成…目标语言」，整段中文且没有点明目标语言，
+     * 1.25bit 量化的小模型会默认往中文上靠，导致无论选什么语言都输出中文。
+     * 目标语言现在由用户提示词（HyMtPromptBuilder）显式指定。
+     */
     private const val SYSTEM_PROMPT =
-        "你是一个离线翻译引擎。请把用户给出的 OCR 文本翻译成自然、准确、简洁的目标语言。" +
-            "只输出译文，不要解释，不要重复原文，不要补充额外说明。"
+        "You are a professional translation engine. Translate the user's text into the target " +
+            "language specified in the instruction. Output only the translation, with no explanation " +
+            "and no extra notes."
 
     @Volatile
     private var ready = false
