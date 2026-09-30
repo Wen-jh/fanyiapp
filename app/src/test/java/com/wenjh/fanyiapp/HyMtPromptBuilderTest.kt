@@ -6,51 +6,64 @@ import org.junit.Test
 
 class HyMtPromptBuilderTest {
     @Test
-    fun build_containsInstructionAndRecognizedText() {
+    fun build_usesOfficialHyMtTemplateWithTargetLanguage() {
         val prompt = HyMtPromptBuilder.build(
-            recognizedText = "Open settings\nNetwork error",
+            recognizedText = "Open settings",
             sourceLanguage = "English",
-            targetLanguage = "Chinese"
+            targetLanguage = "Japanese"
         )
 
-        assertTrue(prompt.contains("只输出译文"))
+        assertTrue(prompt.startsWith("Translate the following segment from English into Japanese"))
+        assertTrue(prompt.contains("without additional explanation."))
         assertTrue(prompt.contains("Open settings"))
-        assertTrue(prompt.contains("Network error"))
     }
 
     @Test
-    fun build_trimsAndRemovesBlankLines() {
+    fun build_omitsFromClauseWhenSourceLanguageIsUnknown() {
+        val prompt = HyMtPromptBuilder.build(
+            recognizedText = "你好",
+            sourceLanguage = null,
+            targetLanguage = "Japanese"
+        )
+
+        assertTrue(prompt.startsWith("Translate the following segment into Japanese"))
+        assertFalse(prompt.contains("from "))
+    }
+
+    @Test
+    fun build_keepsSourceTextVerbatim() {
         val prompt = HyMtPromptBuilder.build(
             recognizedText = "  Hello  \n\n  World  ",
             sourceLanguage = "English",
             targetLanguage = "Chinese"
         )
 
-        assertTrue(prompt.contains("Hello\nWorld"))
-        assertFalse(prompt.contains("\n\n\n"))
+        assertTrue(prompt.contains("Hello  \n\n  World"))
+        assertFalse(prompt.trim().endsWith("World  "))
     }
 
     @Test
-    fun build_containsSelectedSourceAndTargetLanguages() {
-        val prompt = HyMtPromptBuilder.build(
-            recognizedText = "設定を開く",
-            sourceLanguage = "Japanese",
-            targetLanguage = "Chinese"
+    fun buildStrict_namesTargetLanguageAndForbidsKeepingSourceLanguage() {
+        val prompt = HyMtPromptBuilder.buildStrict(
+            recognizedText = "你好",
+            targetLanguage = "Japanese",
+            targetLocalName = "日语"
         )
 
-        assertTrue(prompt.contains("源语言：Japanese"))
-        assertTrue(prompt.contains("目标语言：Chinese"))
-        assertTrue(prompt.contains("設定を開く"))
+        assertTrue(prompt.contains("翻译成日语（Japanese）"))
+        assertTrue(prompt.contains("不要保留原文语言"))
+        assertTrue(prompt.contains("你好"))
     }
 
     @Test
-    fun build_usesRequestedTranslationDirectionInInstructionLine() {
-        val prompt = HyMtPromptBuilder.build(
-            recognizedText = "こんにちは",
-            sourceLanguage = "Japanese",
-            targetLanguage = "English"
+    fun buildStrict_skipsRedundantEnglishNameWhenLocalNameIsSame() {
+        val prompt = HyMtPromptBuilder.buildStrict(
+            recognizedText = "Hello",
+            targetLanguage = "English",
+            targetLocalName = "English"
         )
 
-        assertTrue(prompt.contains("请把下面的 OCR 文本从 Japanese 翻译成自然、简洁、准确的 English。"))
+        assertTrue(prompt.contains("翻译成English。"))
+        assertFalse(prompt.contains("（English）"))
     }
 }

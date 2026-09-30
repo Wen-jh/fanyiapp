@@ -189,13 +189,13 @@ class HyMtTranslationEngine(private val context: Context) : PhotoTranslationEngi
             return detected?.promptName
         }
         if (detected == null) {
-            return if (declared.ocrScript == HyMtLanguageSupport.OcrScript.LATIN) {
+            return if (declared.textScript == HyMtLanguageSupport.TextScript.LATIN) {
                 declared.promptName
             } else {
                 null
             }
         }
-        return if (declared.ocrScript != detected.ocrScript) detected.promptName else declared.promptName
+        return if (declared.textScript != detected.textScript) detected.promptName else declared.promptName
     }
 
     private data class SegmentOutcome(

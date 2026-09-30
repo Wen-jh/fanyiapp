@@ -102,7 +102,22 @@ jobs:
         run: gradle wrapper --gradle-version 8.7
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+
+      - name: Publish build failure details
+        if: failure()
+        continue-on-error: true
+        run: |
+          if [ ! -f build.log ]; then
+            echo "::error title=build log missing::build.log 未生成"
+            exit 0
+          fi
+          grep -nE '^e: |error:|FAILURE:|Execution failed|What went wrong|Caused by:' build.log | head -150 > /tmp/errs.txt || true
+          if [ ! -s /tmp/errs.txt ]; then
+            tail -120 build.log > /tmp/errs.txt
+          fi
+          BODY=$(sed -e 's/%/%25/g' -e 's/\r//g' /tmp/errs.txt | head -c 20000)
+          printf '::error title=Gradle build failure::%s\n' "$(printf '%s' "$BODY" | awk '{printf "%s%%0A", $0}')"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -481,6 +481,8 @@ class ImageTranslationActivity : AppCompatActivity() {
             HyMtLanguageSupport.OcrScript.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
             HyMtLanguageSupport.OcrScript.DEVANAGARI -> TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
             HyMtLanguageSupport.OcrScript.LATIN -> TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            // 兜底：将来往 OcrScript 里加值时不会因为 when 不穷尽而编译失败
+            else -> TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         }
     }
 

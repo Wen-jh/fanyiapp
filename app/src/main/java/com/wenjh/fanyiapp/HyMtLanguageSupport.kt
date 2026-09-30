@@ -1,7 +1,26 @@
 package com.wenjh.fanyiapp
 
 object HyMtLanguageSupport {
+    /**
+     * OCR 识别器选择。
+     *
+     * 对应 ML Kit 的几种识别器，`ImageTranslationActivity.createTextRecognizer()`
+     * 用它做 when 分发。**不要随意往这里加值**，否则那个 when 表达式会变得不穷尽而编译失败；
+     * 语言文字系统请用 [TextScript]。
+     */
     enum class OcrScript {
+        LATIN,
+        CHINESE,
+        JAPANESE,
+        KOREAN,
+        DEVANAGARI
+    }
+
+    /**
+     * 语言文字系统，仅用于翻译链路：提示词源语言校正、输出语言校验。
+     * 与 OCR 无关，可以自由扩展。
+     */
+    enum class TextScript {
         LATIN,
         CHINESE,
         JAPANESE,
@@ -10,6 +29,13 @@ object HyMtLanguageSupport {
         ARABIC,
         HEBREW,
         DEVANAGARI,
+        BENGALI,
+        GUJARATI,
+        TAMIL,
+        TELUGU,
+        TIBETAN,
+        MYANMAR,
+        KHMER,
         OTHER
     }
 
@@ -18,45 +44,46 @@ object HyMtLanguageSupport {
         val promptName: String,
         val displayName: String,
         val uiLabel: String = displayName,
-        val ocrScript: OcrScript = OcrScript.LATIN
+        val ocrScript: OcrScript = OcrScript.LATIN,
+        val textScript: TextScript = TextScript.LATIN
     )
 
     val supportedLanguages: List<LanguageOption> = listOf(
-        LanguageOption("ar", "Arabic", "Arabic", "阿拉伯语", OcrScript.ARABIC),
-        LanguageOption("bn", "Bengali", "Bengali", "孟加拉语", OcrScript.OTHER),
-        LanguageOption("my", "Burmese", "Burmese", "缅甸语", OcrScript.OTHER),
-        LanguageOption("yue", "Cantonese", "Cantonese", "粤语", OcrScript.CHINESE),
-        LanguageOption("zh", "Chinese", "Chinese", "中文", OcrScript.CHINESE),
+        LanguageOption("ar", "Arabic", "Arabic", "阿拉伯语", OcrScript.LATIN, TextScript.ARABIC),
+        LanguageOption("bn", "Bengali", "Bengali", "孟加拉语", OcrScript.LATIN, TextScript.BENGALI),
+        LanguageOption("my", "Burmese", "Burmese", "缅甸语", OcrScript.LATIN, TextScript.MYANMAR),
+        LanguageOption("yue", "Cantonese", "Cantonese", "粤语", OcrScript.CHINESE, TextScript.CHINESE),
+        LanguageOption("zh", "Chinese", "Chinese", "中文", OcrScript.CHINESE, TextScript.CHINESE),
         LanguageOption("cs", "Czech", "Czech", "捷克语"),
         LanguageOption("nl", "Dutch", "Dutch", "荷兰语"),
         LanguageOption("en", "English", "English", "英语"),
         LanguageOption("tl", "Filipino", "Filipino", "菲律宾语"),
         LanguageOption("fr", "French", "French", "法语"),
         LanguageOption("de", "German", "German", "德语"),
-        LanguageOption("gu", "Gujarati", "Gujarati", "古吉拉特语", OcrScript.OTHER),
-        LanguageOption("he", "Hebrew", "Hebrew", "希伯来语", OcrScript.HEBREW),
-        LanguageOption("hi", "Hindi", "Hindi", "印地语", OcrScript.DEVANAGARI),
+        LanguageOption("gu", "Gujarati", "Gujarati", "古吉拉特语", OcrScript.LATIN, TextScript.GUJARATI),
+        LanguageOption("he", "Hebrew", "Hebrew", "希伯来语", OcrScript.LATIN, TextScript.HEBREW),
+        LanguageOption("hi", "Hindi", "Hindi", "印地语", OcrScript.DEVANAGARI, TextScript.DEVANAGARI),
         LanguageOption("id", "Indonesian", "Indonesian", "印尼语"),
         LanguageOption("it", "Italian", "Italian", "意大利语"),
-        LanguageOption("ja", "Japanese", "Japanese", "日语", OcrScript.JAPANESE),
-        LanguageOption("kk", "Kazakh", "Kazakh", "哈萨克语", OcrScript.CYRILLIC),
-        LanguageOption("km", "Khmer", "Khmer", "高棉语", OcrScript.OTHER),
-        LanguageOption("ko", "Korean", "Korean", "韩语", OcrScript.KOREAN),
+        LanguageOption("ja", "Japanese", "Japanese", "日语", OcrScript.JAPANESE, TextScript.JAPANESE),
+        LanguageOption("kk", "Kazakh", "Kazakh", "哈萨克语", OcrScript.LATIN, TextScript.CYRILLIC),
+        LanguageOption("km", "Khmer", "Khmer", "高棉语", OcrScript.LATIN, TextScript.KHMER),
+        LanguageOption("ko", "Korean", "Korean", "韩语", OcrScript.KOREAN, TextScript.KOREAN),
         LanguageOption("ms", "Malay", "Malay", "马来语"),
-        LanguageOption("mr", "Marathi", "Marathi", "马拉地语", OcrScript.DEVANAGARI),
-        LanguageOption("mn", "Mongolian", "Mongolian", "蒙古语", OcrScript.CYRILLIC),
-        LanguageOption("fa", "Persian", "Persian", "波斯语", OcrScript.ARABIC),
+        LanguageOption("mr", "Marathi", "Marathi", "马拉地语", OcrScript.DEVANAGARI, TextScript.DEVANAGARI),
+        LanguageOption("mn", "Mongolian", "Mongolian", "蒙古语", OcrScript.LATIN, TextScript.CYRILLIC),
+        LanguageOption("fa", "Persian", "Persian", "波斯语", OcrScript.LATIN, TextScript.ARABIC),
         LanguageOption("pl", "Polish", "Polish", "波兰语"),
         LanguageOption("pt", "Portuguese", "Portuguese", "葡萄牙语"),
-        LanguageOption("ru", "Russian", "Russian", "俄语", OcrScript.CYRILLIC),
+        LanguageOption("ru", "Russian", "Russian", "俄语", OcrScript.LATIN, TextScript.CYRILLIC),
         LanguageOption("es", "Spanish", "Spanish", "西班牙语"),
-        LanguageOption("ta", "Tamil", "Tamil", "泰米尔语", OcrScript.OTHER),
-        LanguageOption("te", "Telugu", "Telugu", "泰卢固语", OcrScript.OTHER),
-        LanguageOption("bo", "Tibetan", "Tibetan", "藏语", OcrScript.OTHER),
-        LanguageOption("zh-Hant", "Traditional Chinese", "Traditional Chinese", "繁体中文", OcrScript.CHINESE),
-        LanguageOption("uk", "Ukrainian", "Ukrainian", "乌克兰语", OcrScript.CYRILLIC),
-        LanguageOption("ur", "Urdu", "Urdu", "乌尔都语", OcrScript.ARABIC),
-        LanguageOption("ug", "Uyghur", "Uyghur", "维吾尔语", OcrScript.ARABIC),
+        LanguageOption("ta", "Tamil", "Tamil", "泰米尔语", OcrScript.LATIN, TextScript.TAMIL),
+        LanguageOption("te", "Telugu", "Telugu", "泰卢固语", OcrScript.LATIN, TextScript.TELUGU),
+        LanguageOption("bo", "Tibetan", "Tibetan", "藏语", OcrScript.LATIN, TextScript.TIBETAN),
+        LanguageOption("zh-Hant", "Traditional Chinese", "Traditional Chinese", "繁体中文", OcrScript.CHINESE, TextScript.CHINESE),
+        LanguageOption("uk", "Ukrainian", "Ukrainian", "乌克兰语", OcrScript.LATIN, TextScript.CYRILLIC),
+        LanguageOption("ur", "Urdu", "Urdu", "乌尔都语", OcrScript.LATIN, TextScript.ARABIC),
+        LanguageOption("ug", "Uyghur", "Uyghur", "维吾尔语", OcrScript.LATIN, TextScript.ARABIC),
         LanguageOption("vi", "Vietnamese", "Vietnamese", "越南语")
     )
 
@@ -151,7 +178,7 @@ object HyMtLanguageSupport {
             "km" -> counts.khmer > 0
 
             // 拉丁语系（英/法/德/西/葡/意/荷/波/捷/印尼/马来/菲/越…）：
-            // 必须有拉丁字母，且不能被汉字占据主导（那就是没翻译直接吐中文了）
+            // 必须有拉丁字母，且不能被汉字占据主导（那就是没翻译、直接吐中文了）
             else -> counts.latin > 0 && counts.han * 2 < counts.letters
         }
     }
